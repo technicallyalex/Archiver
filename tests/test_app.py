@@ -13,6 +13,37 @@ from urllib.request import Request, urlopen
 import app
 
 
+class ScanProgressTests(unittest.TestCase):
+    def test_scan_reports_discovery_current_file_and_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'a.mp4').write_bytes(b'video')
+            (root / 'b.mp4').write_bytes(b'bad')
+            (root / 'notes.txt').write_text('ignore')
+            nested = root / 'nested'
+            nested.mkdir()
+            (nested / 'c.mp4').write_bytes(b'video')
+            def fake_probe(path):
+                self.assertEqual(app.STATE['scan']['phase'], 'probing')
+                self.assertEqual(app.STATE['scan']['current'], str(path))
+                if path.name == 'b.mp4':
+                    raise ValueError('Unreadable')
+                return {'id': path.name, 'name': path.name}
+            app.STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
+            with patch.object(app, 'probe', side_effect=fake_probe):
+                app.scan(str(root), True)
+            status = app.STATE['scan']
+            self.assertEqual(status['total'], 3)
+            self.assertEqual(status['done'], 3)
+            self.assertEqual(status['entries'], 4)
+            self.assertEqual(status['folders'], 2)
+            self.assertEqual(len(status['errors']), 1)
+            self.assertFalse(status['running'])
+            self.assertEqual(status['phase'], 'complete')
+            self.assertGreaterEqual(status['finished'], status['started'])
+            self.assertTrue(any('Skipped: b.mp4' in message for message in status['recent']))
+
+
 class NamingTests(unittest.TestCase):
     def test_naming_modes(self):
         item = {'path': 'Clip.mov', 'width': 1280, 'height': 720, 'fps': 59.94}

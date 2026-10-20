@@ -59,3 +59,7 @@ Automatic uses per-file FFprobe video-stream bitrate, including BPS stream tags 
 ## Build a release
 
 Run `python build_release.py` to create a versioned ZIP in `dist/` and its SHA-256 checksum. Only the listed source, web assets, tests, and documentation are packaged. Media, caches, credentials, and FFmpeg/FFprobe binaries are excluded.
+
+## Scan progress
+
+The scan panel separates folder discovery from metadata inspection. Discovery shows folders searched, file entries checked, and videos found. Metadata inspection shows processed/total videos, the current file, time on that file, total elapsed time, errors, and recent activity. A slow or unreadable file can remain visible while FFprobe runs (up to its 90-second timeout). Discovery uses an indeterminate progress bar because the total is not yet known.

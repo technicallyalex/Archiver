@@ -100,22 +100,50 @@ def probe(path):
 
 
 def scan(directory, recursive):
+    started = time.time()
+    with LOCK:
+        STATE['scan'].update(phase='discovering', started=started, finished=None,
+                             current='', entries=0, folders=0, recent=[], file_started=None)
+        STATE['files'] = {}
+    def recent(message):
+        STATE['scan']['recent'] = (STATE['scan']['recent'] + [message])[-8:]
     try:
         root = Path(directory).expanduser().resolve(strict=True)
         if not root.is_dir():
             raise ValueError('Choose an existing directory')
-        paths = sorted(p for p in (root.rglob('*') if recursive else root.iterdir()) if p.is_file() and p.suffix.lower() in VIDEO_EXT)
+        paths = []
+        def discovery_error(error):
+            with LOCK:
+                STATE['scan']['errors'].append(str(error))
+                recent(f'Skipped folder: {error.filename}')
+        for folder, dirs, files in os.walk(root, onerror=discovery_error, followlinks=False):
+            if not recursive:
+                dirs[:] = []
+            with LOCK:
+                STATE['scan']['current'] = str(folder)
+                STATE['scan']['folders'] += 1
+            for name in files:
+                path = Path(folder) / name
+                with LOCK:
+                    STATE['scan']['entries'] += 1
+                    if path.suffix.lower() in VIDEO_EXT:
+                        paths.append(path)
+                        STATE['scan']['total'] = len(paths)
         with LOCK:
-            STATE['files'] = {}
-            STATE['scan'].update(total=len(paths))
-        for path in paths:
+            STATE['scan'].update(phase='probing', current='', file_started=None)
+            recent(f'Discovered {len(paths)} video files')
+        for path in sorted(paths):
+            with LOCK:
+                STATE['scan'].update(current=str(path), file_started=time.time())
             try:
                 item = probe(path)
                 with LOCK:
                     STATE['files'][item['id']] = item
+                    recent(f'Read: {path.name}')
             except Exception as exc:
                 with LOCK:
                     STATE['scan']['errors'].append(f'{path.name}: {exc}')
+                    recent(f'Skipped: {path.name} — {exc}')
             with LOCK:
                 STATE['scan']['done'] += 1
     except Exception as exc:
@@ -123,7 +151,7 @@ def scan(directory, recursive):
             STATE['scan']['errors'].append(str(exc))
     finally:
         with LOCK:
-            STATE['scan']['running'] = False
+            STATE['scan'].update(running=False, phase='complete', finished=time.time(), current='', file_started=None)
 
 
 def command_for(source, output, settings):
