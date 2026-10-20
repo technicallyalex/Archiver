@@ -9,7 +9,7 @@ def main():
     version = (root / 'VERSION').read_text().strip()
     files = ['app.py', 'folder_picker.py', 'build_release.py', 'Launch Archiver.bat',
              'README.md', 'CHANGELOG.md', 'VERSION']
-    files += [str(p.relative_to(root)) for pattern in ['web/*', 'tests/*.py']
+    files += [str(p.relative_to(root)) for pattern in ['web/*', 'tests/*.py', 'docs/*.md']
               for p in sorted(root.glob(pattern)) if p.is_file()]
     destination = root / 'dist'
     destination.mkdir(exist_ok=True)
