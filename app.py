@@ -1,6 +1,7 @@
 """Archiver: dependency-free local FFmpeg library and encoding queue."""
 import argparse
 import collections
+from concurrent.futures import ThreadPoolExecutor
 import json
 import mimetypes
 import os
@@ -18,11 +19,13 @@ from urllib.parse import parse_qs, urlparse
 import webbrowser
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / '.dependencies'))
+from performance import MONITOR
 VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
 VIDEO_EXT = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.mpeg', '.mpg', '.mts', '.m2ts', '.ts', '.wmv', '.flv', '.vob', '.ogv'}
 ENCODERS = {'h264': ['libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf'], 'hevc': ['libx265', 'hevc_nvenc', 'hevc_qsv', 'hevc_amf'], 'av1': ['libsvtav1', 'libaom-av1', 'av1_nvenc', 'av1_qsv', 'av1_amf'], 'vp9': ['libvpx-vp9']}
 TOKEN = secrets.token_urlsafe(32)
-STATE = {'files': {}, 'jobs': [], 'ffmpeg': shutil.which('ffmpeg') or '', 'ffprobe': shutil.which('ffprobe') or '', 'encoders': [], 'scan': {'running': False, 'done': 0, 'total': 0, 'errors': []}}
+STATE = {'files': {}, 'jobs': [], 'queue_paused': False, 'ffmpeg': shutil.which('ffmpeg') or '', 'ffprobe': shutil.which('ffprobe') or '', 'encoders': [], 'scan': {'running': False, 'done': 0, 'total': 0, 'errors': []}}
 LOCK = threading.RLock()
 WAKE = threading.Event()
 SCAN_STOP = threading.Event()
@@ -123,11 +126,11 @@ def probe(path, cancel=None):
     return {'id': secrets.token_hex(12), 'path': str(path), 'name': path.name, 'size': path.stat().st_size, 'codec': video.get('codec_name', '?'), 'width': video.get('width', 0), 'height': video.get('height', 0), 'fps': fps, 'video_bitrate': stream_bitrate, 'rate_mode': rate_mode, 'source_quality': source_quality, 'pixel_format': video.get('pix_fmt', ''), 'color_transfer': video.get('color_transfer', ''), 'bitrate': int(fmt.get('bit_rate') or 0), 'duration': float(fmt.get('duration') or video.get('duration') or 0), 'audio': ', '.join(dict.fromkeys(s.get('codec_name', '?') for s in data.get('streams', []) if s.get('codec_type') == 'audio')), 'container': fmt.get('format_name', '?')}
 
 
-def scan(directory, recursive):
+def scan(directory, recursive, workers=1):
     started = time.time()
     with LOCK:
         STATE['scan'].update(phase='discovering', started=started, finished=None,
-                             current='', entries=0, folders=0, recent=[], file_started=None)
+                             workers=workers, active={}, current='', entries=0, folders=0, recent=[], file_started=None)
         STATE['files'] = {}
     def recent(message):
         STATE['scan']['recent'] = (STATE['scan']['recent'] + [message])[-8:]
@@ -160,24 +163,41 @@ def scan(directory, recursive):
         with LOCK:
             STATE['scan'].update(phase='probing', current='', file_started=None)
             recent(f'Discovered {len(paths)} video files')
-        for path in sorted(paths):
+        def inspect(path):
             if SCAN_STOP.is_set():
-                raise InterruptedError('Scan stopped')
+                return
             with LOCK:
-                STATE['scan'].update(current=str(path), file_started=time.time())
+                STATE['scan']['active'][str(path)] = time.time()
+                STATE['scan'].update(current=' | '.join(STATE['scan']['active']), file_started=min(STATE['scan']['active'].values()))
             try:
                 item = probe(path, cancel=SCAN_STOP)
                 with LOCK:
                     STATE['files'][item['id']] = item
                     recent(f'Read: {path.name}')
             except InterruptedError:
-                raise
+                return
             except Exception as exc:
                 with LOCK:
                     STATE['scan']['errors'].append(f'{path.name}: {exc}')
                     recent(f'Skipped: {path.name} — {exc}')
+            finally:
+                with LOCK:
+                    STATE['scan']['active'].pop(str(path), None)
+                    STATE['scan']['current'] = ' | '.join(STATE['scan']['active'])
             with LOCK:
                 STATE['scan']['done'] += 1
+        if workers == 1:
+            for path in sorted(paths):
+                if SCAN_STOP.is_set():
+                    break
+                inspect(path)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for _ in executor.map(inspect, sorted(paths)):
+                    pass
+        if SCAN_STOP.is_set():
+            raise InterruptedError('Scan stopped')
+
     except InterruptedError:
         with LOCK:
             recent('Scan stopped by user; loaded videos retained')
@@ -414,9 +434,9 @@ def enqueue(ids, settings, auto_start=False):
             if mode not in ['copy', 'move']:
                 command_for(source, output, job_settings)
             reserved.add(os.path.normcase(str(output)))
-            new_jobs.append({'id': secrets.token_hex(10), 'name': source.name, 'source': str(source), 'output': str(output), 'settings': job_settings, 'duration': item['duration'], 'status': 'queued', 'percent': 0, 'speed': '', 'fps': '', 'eta': None, 'log': collections.deque(maxlen=1500), 'cancel': False, 'error': ''})
+            new_jobs.append({'id': secrets.token_hex(10), 'name': source.name, 'source': str(source), 'output': str(output), 'settings': job_settings, 'duration': item['duration'], 'source_size': source.stat().st_size, 'output_size': None, 'status': 'queued', 'percent': 0, 'speed': '', 'fps': '', 'eta': None, 'log': collections.deque(maxlen=1500), 'cancel': False, 'error': ''})
         STATE['jobs'].extend(new_jobs)
-        if auto_start:
+        if auto_start and not STATE['queue_paused']:
             WAKE.set()
 
 
@@ -490,7 +510,20 @@ def start_queue():
     with LOCK:
         if not any(j['status'] == 'queued' for j in STATE['jobs']):
             raise ValueError('Add files to the queue first')
+        STATE['queue_paused'] = False
         WAKE.set()
+
+
+def pause_queue(stop=False):
+    with LOCK:
+        STATE['queue_paused'] = True
+        WAKE.clear()
+        if stop:
+            for job in STATE['jobs']:
+                if job['status'] == 'running':
+                    job['cancel'] = True
+            if PROCESS:
+                PROCESS.terminate()
 
 
 def copy_job(job, temp):
@@ -514,6 +547,9 @@ def worker():
     while True:
         WAKE.wait()
         with LOCK:
+            if not WAKE.is_set() or STATE['queue_paused']:
+                WAKE.clear()
+                continue
             job = next((j for j in STATE['jobs'] if j['status'] == 'queued'), None)
             if not job:
                 WAKE.clear()
@@ -588,7 +624,7 @@ def worker():
                                     raise
                         if mode == 'move':
                             Path(job['source']).unlink()
-                    job.update(status='completed', percent=100, eta=0)
+                    job.update(status='completed', percent=100, eta=0, output_size=output.stat().st_size)
         except Exception as exc:
             with LOCK:
                 job.update(status='cancelled' if job['cancel'] else 'failed', error=str(exc))
@@ -628,9 +664,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(file.read_bytes(), content_type='text/javascript' if file.suffix == '.js' else 'text/css')
         if self.headers.get('X-Token') != TOKEN and parse_qs(url.query).get('token', [''])[0] != TOKEN:
             return self.send({'error': 'Unauthorized'}, 403)
+        if url.path == '/api/performance':
+            return self.send(MONITOR.read())
         if url.path == '/api/state':
             with LOCK:
-                return self.send({'files': list(STATE['files'].values()), 'scan': STATE['scan'], 'jobs': [{**j, 'log': list(j['log'])} for j in STATE['jobs']], 'queue_running': WAKE.is_set(), 'ffmpeg': STATE['ffmpeg'], 'ffprobe': STATE['ffprobe'], 'encoders': STATE['encoders']})
+                return self.send({'files': list(STATE['files'].values()), 'scan': STATE['scan'], 'jobs': [{**j, 'log': list(j['log'])} for j in STATE['jobs']], 'queue_running': WAKE.is_set(), 'queue_paused': STATE['queue_paused'], 'ffmpeg': STATE['ffmpeg'], 'ffprobe': STATE['ffprobe'], 'encoders': STATE['encoders']})
         if url.path in ['/api/thumbnail', '/api/media']:
             query = parse_qs(url.query)
             item = STATE['files'].get(query.get('id', [''])[0])
@@ -673,6 +711,7 @@ class Handler(BaseHTTPRequestHandler):
                         SCAN_STOP.set()
                         STATE['scan']['stopping'] = True
             elif path == '/api/scan':
+                workers = 4 if body.get('parallel') is True else 1
                 with LOCK:
                     if STATE['scan']['running']:
                         raise ValueError('A scan is already running')
@@ -680,7 +719,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('Configure FFmpeg and FFprobe first')
                     SCAN_STOP.clear()
                     STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
-                threading.Thread(target=scan, args=(body['directory'], bool(body.get('recursive'))), daemon=True).start()
+                threading.Thread(target=scan, args=(body['directory'], bool(body.get('recursive')), workers), daemon=True).start()
             elif path == '/api/queue':
                 enqueue(body['ids'], body['settings'], body.get('auto_start') is True)
             elif path == '/api/recommend-quality':
@@ -694,6 +733,10 @@ class Handler(BaseHTTPRequestHandler):
                         items = [{'path': 'Video.mp4', 'width': 1920, 'height': 1080, 'fps': 30}]
                     names = [output_name(item, body['settings'], index) for index, item in enumerate(items[:3], 1)]
                 return self.send({'names': names, 'example': not bool(body.get('ids'))})
+            elif path == '/api/pause-queue':
+                pause_queue()
+            elif path == '/api/stop-queue':
+                pause_queue(stop=True)
             elif path == '/api/start':
                 start_queue()
             elif path == '/api/cancel':
@@ -705,6 +748,21 @@ class Handler(BaseHTTPRequestHandler):
                             job['status'] = 'cancelled'
                         elif PROCESS:
                             PROCESS.terminate()
+            elif path == '/api/open-directory':
+                with LOCK:
+                    job = next((j for j in STATE['jobs'] if j['id'] == body.get('id')), None)
+                    if not job or job['status'] != 'completed':
+                        raise ValueError('Only completed jobs have an output directory to open')
+                    directory = Path(job['output']).parent.resolve()
+                if not directory.is_dir():
+                    raise ValueError('The output directory is no longer available')
+                if sys.platform == 'win32':
+                    os.startfile(str(directory))
+                else:
+                    subprocess.Popen(['open' if sys.platform == 'darwin' else 'xdg-open', str(directory)])
+            elif path == '/api/clear-queue':
+                with LOCK:
+                    STATE['jobs'] = [j for j in STATE['jobs'] if j['status'] != 'queued']
             elif path == '/api/clear':
                 with LOCK:
                     STATE['jobs'] = [j for j in STATE['jobs'] if j['status'] in ['queued', 'running']]

@@ -1,6 +1,6 @@
 # Usage guide
 
-A local video library and FFmpeg queue with a browser interface. No Python packages, cloud services, or bundled media binaries are required.
+A local video library and FFmpeg queue with a browser interface. The interface runs locally. Performance monitoring uses psutil; FFmpeg and FFprobe are supplied separately.
 
 ## Start
 
@@ -24,7 +24,7 @@ The first video stream and all audio streams are included. Subtitles, attachment
 File actions:
 
 - **Preserve Originals:** write a new file next to the source. Defaults to a custom `archiver` suffix, such as `Video_archiver.mp4`.
-- **Replace originals:** encode to a temporary file, validate it with FFprobe, then replace the source. Requires matching source/output extensions. By default the original is sent to the Windows Recycle Bin. Select **Permanently Delete** in the original-file toggle to remove it permanently instead.
+- **Replace originals:** encode to a temporary file, validate it with FFprobe, then replace the source. Requires matching source/output extensions. By default the original is sent to the Windows Recycle Bin. Select **Permanently Delete** in the original-file toggle and check the acknowledgment to remove it permanently instead.
 - **Transcode to New Directory:** write the chosen output filename in an existing destination folder.
 
 Replacement keeps the original in a temporary backup folder until publishing succeeds. A publishing failure restores it; a recycling/deletion failure retains that backup and reports its path. Recycled files retain their original filename but Windows records the temporary backup folder as their restore location; restore and move them back manually if needed. Recycling requires Windows and a drive supporting the Recycle Bin. FFprobe validation checks readable video metadata and positive duration, not full decoding or visual quality.
@@ -63,3 +63,13 @@ Run `python build_release.py` to create a versioned ZIP in `dist/` and its SHA-2
 ## Scan progress
 
 The scan panel separates folder discovery from metadata inspection. Discovery shows folders searched, file entries checked, and videos found. Metadata inspection shows processed/total videos, the current file, time on that file, total elapsed time, errors, and recent activity. A slow or unreadable file can remain visible while FFprobe runs (up to its 90-second timeout). Discovery uses an indeterminate progress bar because the total is not yet known.
+
+## Parallel scans and queue controls
+
+Parallel scan inspects up to four video files at once. It may improve SSD scanning but can increase contention on hard drives or network storage. Stop scanning cancels active probes in either mode. Pause queue lets the current encode finish and holds remaining jobs; Stop queue cancels the active job and holds the remaining jobs. Resume queue starts waiting jobs. Automatic starting does not override a paused queue. Completed jobs show before/after sizes and saved space, or an increase when the output is larger.
+
+**Clear queue** removes all waiting jobs. An active encode continues; use Stop queue first to cancel it. Clear finished removes completed, failed, and cancelled entries separately.
+
+## Performance
+
+Install `python -m pip install -r requirements.txt` for CPU, RAM, disk throughput, and network throughput readings. The Performance tab shows whole-system counters, not just FFmpeg. Readings update about every two seconds with two minutes of history and stop collecting shortly after leaving the tab. NVIDIA utilization, encode/decode engines, and memory use are read through installed nvidia-smi; other GPUs currently show unavailable. Disk active time is shown only when the OS supplies it; throughput is aggregated across local disks and does not represent NAS disk utilization.

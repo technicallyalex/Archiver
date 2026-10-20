@@ -39,9 +39,10 @@ Media library with thumbnail previews, file metadata, and encoding controls. Scr
 
 1. Install [Python 3.10 or newer](https://www.python.org/downloads/) and download [FFmpeg and FFprobe](https://ffmpeg.org/download.html) for your platform. They are not bundled with Archiver.
 2. Download and extract the app from [Releases](https://github.com/technicallyalex/Archiver/releases).
-3. On Windows, double-click **Launch Archiver.bat**, or run `python app.py` from the project folder.
-4. Open **FFmpeg settings** if the tools are not detected automatically.
-5. Scan a folder, select videos, choose output settings, and add them to the queue. Click **Start queue** to begin.
+3. Install the monitoring dependency with `python -m pip install -r requirements.txt`.
+4. On Windows, double-click **Launch Archiver.bat**, or run `python app.py` from the project folder.
+5. Open **FFmpeg settings** if the tools are not detected automatically.
+6. Scan a folder, select videos, choose output settings, and add them to the queue. Click **Start queue** to begin.
 
 Reducing quality, resolution, or frame rate can save space at the cost of detail or motion smoothness. Results depend on the source and encoder settings. Current output is 8-bit and does not include HDR tone mapping, so review a sample before replacing important footage.
 
@@ -49,4 +50,4 @@ See the [usage guide](docs/USAGE.md) for naming options, original-file handling,
 
 ## Development
 
-No third-party Python packages are required. Run `python -m unittest discover -s tests -v` to test and `python build_release.py` to package the app. Integration tests require FFmpeg and FFprobe; the Recycle Bin test is Windows-only. The release version is read from `VERSION`.
+System monitoring uses psutil from `requirements.txt`; GPU readings use NVIDIA’s installed `nvidia-smi` when available. Run `python -m unittest discover -s tests -v` to test and `python build_release.py` to package the app. Integration tests require FFmpeg and FFprobe; the Recycle Bin test is Windows-only. The release version is read from `VERSION`.

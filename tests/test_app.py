@@ -25,14 +25,14 @@ class ScanProgressTests(unittest.TestCase):
             (nested / 'c.mp4').write_bytes(b'video')
             def fake_probe(path, **kwargs):
                 self.assertEqual(app.STATE['scan']['phase'], 'probing')
-                self.assertEqual(app.STATE['scan']['current'], str(path))
+                self.assertIn(str(path), app.STATE['scan']['current'])
                 if path.name == 'b.mp4':
                     raise ValueError('Unreadable')
                 return {'id': path.name, 'name': path.name}
             app.SCAN_STOP.clear()
             app.STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
             with patch.object(app, 'probe', side_effect=fake_probe):
-                app.scan(str(root), True)
+                app.scan(str(root), True, workers=4)
             status = app.STATE['scan']
             self.assertEqual(status['total'], 3)
             self.assertEqual(status['done'], 3)
@@ -157,6 +157,7 @@ class IntegrationTests(unittest.TestCase):
         self.item = app.probe(self.source)
         with app.LOCK:
             app.WAKE.clear()
+            app.STATE['queue_paused'] = False
             app.STATE['files'] = {self.item['id']: self.item}
             app.STATE['jobs'] = []
         self.settings = dict(codec='h264', encoder='libx264', resolution='720', fps='30', bitrate='1000k', container='mp4', audio='aac', mode='preserve', destination='', naming='custom', nameSuffix='encoded')
@@ -180,6 +181,8 @@ class IntegrationTests(unittest.TestCase):
         self.assertAlmostEqual(self.item['fps'], 24)
         app.enqueue([self.item['id']], self.settings, auto_start=True)
         job = self.wait_job()
+        self.assertEqual(job['source_size'], len(original))
+        self.assertEqual(job['output_size'], Path(job['output']).stat().st_size)
         output = app.probe(Path(job['output']))
         self.assertEqual(output['codec'], 'h264')
         self.assertEqual(output['width'], 160)  # no upscaling
@@ -229,6 +232,22 @@ class IntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Confirm'):
             app.enqueue([self.item['id']], {**self.settings, 'mode': 'overwrite', 'deleteOriginal': True})
         self.assertEqual(app.STATE['jobs'], [])
+
+    def test_pause_and_stop_queue(self):
+        app.enqueue([self.item['id']], self.settings)
+        app.pause_queue()
+        self.assertTrue(app.STATE['queue_paused'])
+        self.assertFalse(app.WAKE.is_set())
+        self.assertEqual(app.STATE['jobs'][0]['status'], 'queued')
+        app.start_queue()
+        self.wait_job()
+        with patch.object(app, 'PROCESS') as process:
+            app.STATE['jobs'][0]['status'] = 'running'
+            app.pause_queue(stop=True)
+            self.assertTrue(app.STATE['jobs'][0]['cancel'])
+            process.terminate.assert_called_once()
+            app.STATE['jobs'][0]['status'] = 'cancelled'
+        app.STATE['queue_paused'] = False
 
     def test_start_empty_queue(self):
         with self.assertRaisesRegex(ValueError, 'Add files'):
