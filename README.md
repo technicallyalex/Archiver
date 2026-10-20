@@ -12,6 +12,29 @@ Archiver helps save storage space by transcoding video footage at lower quality 
 - Add filename suffixes or batch names and monitor jobs in a separate queue.
 - Use light or dark mode.
 
+## Screenshots
+
+Media library with thumbnail previews, file metadata, and encoding controls. Screenshots use generated sample videos.
+
+![Media library in dark mode](docs/screenshots/media-library.png)
+
+<details>
+<summary>More views: light theme, file list, queue, and FFmpeg output</summary>
+
+**Detailed file list and light theme**
+
+![Detailed file list in light mode](docs/screenshots/list-view-light.png)
+
+**Encoding queue**
+
+![Completed encoding jobs with progress bars and speed](docs/screenshots/encoding-queue.png)
+
+**Verbose FFmpeg output**
+
+![Encoding queue showing detailed FFmpeg output](docs/screenshots/ffmpeg-output.png)
+
+</details>
+
 ## Getting started
 
 1. Install [Python 3.10 or newer](https://www.python.org/downloads/) and download [FFmpeg and FFprobe](https://ffmpeg.org/download.html) for your platform. They are not bundled with Archiver.
