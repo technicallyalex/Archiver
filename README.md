@@ -1,6 +1,6 @@
 # Archiver
 
-Archiver helps save storage space by transcoding video footage at lower quality or with more efficient codecs. It provides a local browser interface for FFmpeg and FFprobe, so you can review a folder of footage, choose what to keep, and batch-encode smaller archive copies.
+Archiver helps save storage space by transcoding video footage at lower quality or with more efficient codecs. It provides a local browser interface powered by FFMPEG, so you can review a folder of footage, choose what to keep, and batch-encode smaller archive copies.
 
 ## Features
 
@@ -14,7 +14,7 @@ Archiver helps save storage space by transcoding video footage at lower quality 
 
 ## Getting started
 
-1. Install Python 3.10 or newer and supply your own FFmpeg and FFprobe binaries. They are not bundled with Archiver.
+1. Install [Python 3.10 or newer](https://www.python.org/downloads/) and download [FFmpeg and FFprobe](https://ffmpeg.org/download.html) for your platform. They are not bundled with Archiver.
 2. Download and extract the app from [Releases](https://github.com/technicallyalex/Archiver/releases).
 3. On Windows, double-click **Launch Archiver.bat**, or run `python app.py` from the project folder.
 4. Open **FFmpeg settings** if the tools are not detected automatically.

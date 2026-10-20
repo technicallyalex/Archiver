@@ -4,8 +4,8 @@ A local video library and FFmpeg queue with a browser interface. No Python packa
 
 ## Start
 
-1. Install Python 3.10 or newer.
-2. Obtain your own FFmpeg and FFprobe binaries from a source you trust. Put them on PATH or enter their full executable paths in **FFmpeg settings**. Both programs are required. Archiver does not redistribute them.
+1. Install [Python 3.10 or newer](https://www.python.org/downloads/).
+2. Download your own FFmpeg and FFprobe binaries from the [FFmpeg downloads page](https://ffmpeg.org/download.html). Put them on PATH or enter their full executable paths in **FFmpeg settings**. Both programs are required. Archiver does not redistribute them.
 3. On Windows, double-click **Launch Archiver.bat**. On any supported platform, run `python app.py` from this folder.
 4. Open the address printed in the terminal if the browser does not open automatically. Keep the terminal open; press Ctrl+C to stop the app.
 
