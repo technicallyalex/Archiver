@@ -23,12 +23,13 @@ class ScanProgressTests(unittest.TestCase):
             nested = root / 'nested'
             nested.mkdir()
             (nested / 'c.mp4').write_bytes(b'video')
-            def fake_probe(path):
+            def fake_probe(path, **kwargs):
                 self.assertEqual(app.STATE['scan']['phase'], 'probing')
                 self.assertEqual(app.STATE['scan']['current'], str(path))
                 if path.name == 'b.mp4':
                     raise ValueError('Unreadable')
                 return {'id': path.name, 'name': path.name}
+            app.SCAN_STOP.clear()
             app.STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
             with patch.object(app, 'probe', side_effect=fake_probe):
                 app.scan(str(root), True)
@@ -42,6 +43,28 @@ class ScanProgressTests(unittest.TestCase):
             self.assertEqual(status['phase'], 'complete')
             self.assertGreaterEqual(status['finished'], status['started'])
             self.assertTrue(any('Skipped: b.mp4' in message for message in status['recent']))
+
+
+class StopScanTests(unittest.TestCase):
+    def test_stop_preserves_loaded_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ['a.mp4', 'b.mp4']:
+                (root / name).write_bytes(b'video')
+            app.SCAN_STOP.clear()
+            app.STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
+            def fake_probe(path, **kwargs):
+                app.SCAN_STOP.set()
+                return {'id': path.name, 'name': path.name}
+            try:
+                with patch.object(app, 'probe', side_effect=fake_probe):
+                    app.scan(directory, False)
+                self.assertEqual(app.STATE['scan']['phase'], 'stopped')
+                self.assertEqual(app.STATE['scan']['done'], 1)
+                self.assertEqual(len(app.STATE['files']), 1)
+                self.assertEqual(app.STATE['scan']['errors'], [])
+            finally:
+                app.SCAN_STOP.clear()
 
 
 class NamingTests(unittest.TestCase):

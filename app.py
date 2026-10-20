@@ -25,6 +25,7 @@ TOKEN = secrets.token_urlsafe(32)
 STATE = {'files': {}, 'jobs': [], 'ffmpeg': shutil.which('ffmpeg') or '', 'ffprobe': shutil.which('ffprobe') or '', 'encoders': [], 'scan': {'running': False, 'done': 0, 'total': 0, 'errors': []}}
 LOCK = threading.RLock()
 WAKE = threading.Event()
+SCAN_STOP = threading.Event()
 BROWSE_LOCK = threading.Lock()
 PROCESS = None
 CACHE = tempfile.TemporaryDirectory(prefix='archiver-')
@@ -73,8 +74,31 @@ def configure(ffmpeg, ffprobe):
     STATE['encoders'] = [e for group in ENCODERS.values() for e in group if e in available]
 
 
-def probe(path):
-    result = run([STATE['ffprobe'], '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)], 90)
+def probe(path, cancel=None):
+    command = [STATE['ffprobe'], '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)]
+    if cancel is None:
+        result = run(command, 90)
+    else:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   encoding='utf-8', errors='replace', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        deadline = time.monotonic() + 90
+        try:
+            while True:
+                if cancel.is_set():
+                    raise InterruptedError('Scan stopped')
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('FFprobe exceeded 90 seconds')
+                try:
+                    stdout, stderr = process.communicate(timeout=.2)
+                    result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+
     if result.returncode:
         raise ValueError(result.stderr.strip() or 'FFprobe could not read this file')
     data = json.loads(result.stdout)
@@ -122,7 +146,11 @@ def scan(directory, recursive):
             with LOCK:
                 STATE['scan']['current'] = str(folder)
                 STATE['scan']['folders'] += 1
+            if SCAN_STOP.is_set():
+                raise InterruptedError('Scan stopped')
             for name in files:
+                if SCAN_STOP.is_set():
+                    raise InterruptedError('Scan stopped')
                 path = Path(folder) / name
                 with LOCK:
                     STATE['scan']['entries'] += 1
@@ -133,25 +161,32 @@ def scan(directory, recursive):
             STATE['scan'].update(phase='probing', current='', file_started=None)
             recent(f'Discovered {len(paths)} video files')
         for path in sorted(paths):
+            if SCAN_STOP.is_set():
+                raise InterruptedError('Scan stopped')
             with LOCK:
                 STATE['scan'].update(current=str(path), file_started=time.time())
             try:
-                item = probe(path)
+                item = probe(path, cancel=SCAN_STOP)
                 with LOCK:
                     STATE['files'][item['id']] = item
                     recent(f'Read: {path.name}')
+            except InterruptedError:
+                raise
             except Exception as exc:
                 with LOCK:
                     STATE['scan']['errors'].append(f'{path.name}: {exc}')
                     recent(f'Skipped: {path.name} — {exc}')
             with LOCK:
                 STATE['scan']['done'] += 1
+    except InterruptedError:
+        with LOCK:
+            recent('Scan stopped by user; loaded videos retained')
     except Exception as exc:
         with LOCK:
             STATE['scan']['errors'].append(str(exc))
     finally:
         with LOCK:
-            STATE['scan'].update(running=False, phase='complete', finished=time.time(), current='', file_started=None)
+            STATE['scan'].update(running=False, phase='stopped' if SCAN_STOP.is_set() else 'complete', finished=time.time(), current='', file_started=None)
 
 
 def command_for(source, output, settings):
@@ -632,12 +667,18 @@ class Handler(BaseHTTPRequestHandler):
                     configure(body['ffmpeg'], body['ffprobe'])
             elif path == '/api/browse':
                 return self.send({'directory': browse_directory(body.get('initial', ''))})
+            elif path == '/api/stop-scan':
+                with LOCK:
+                    if STATE['scan']['running']:
+                        SCAN_STOP.set()
+                        STATE['scan']['stopping'] = True
             elif path == '/api/scan':
                 with LOCK:
                     if STATE['scan']['running']:
                         raise ValueError('A scan is already running')
                     if not STATE['encoders']:
                         raise ValueError('Configure FFmpeg and FFprobe first')
+                    SCAN_STOP.clear()
                     STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
                 threading.Thread(target=scan, args=(body['directory'], bool(body.get('recursive'))), daemon=True).start()
             elif path == '/api/queue':
