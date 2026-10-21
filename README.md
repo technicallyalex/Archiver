@@ -1,7 +1,6 @@
 # Archiver
 
-Archiver helps save storage space by transcoding video footage at lower quality or with more efficient codecs. It provides a local browser interface powered by FFMPEG, so you can review a folder of footage, choose what to keep, and batch-encode smaller archive copies.
-
+Archiver is simple browser-based tool that uses FFMPEG to select and transcode video files to reduce filesize.  It provides simple to use dropdowns and manual controls to tailor the output to whatever quality level you want and includes file automations for handling both the original files and output files.
 ## Features
 
 - Scan folders and review file sizes, codecs, resolution, and frame rate.
