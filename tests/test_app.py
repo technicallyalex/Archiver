@@ -54,7 +54,7 @@ class StopScanTests(unittest.TestCase):
             app.SCAN_STOP.clear()
             app.STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
             def fake_probe(path, **kwargs):
-                app.SCAN_STOP.set()
+                if path.name == 'b.mp4':app.SCAN_STOP.set()
                 return {'id': path.name, 'name': path.name}
             try:
                 with patch.object(app, 'probe', side_effect=fake_probe):
@@ -189,8 +189,10 @@ class IntegrationTests(unittest.TestCase):
         self.assertAlmostEqual(output['fps'], 30)
         self.assertEqual(self.source.read_bytes(), original)
         self.assertFalse(list(self.root.glob('.archiver-*')))
-        with self.assertRaisesRegex(ValueError, 'already exists'):
-            app.enqueue([self.item['id']], self.settings, auto_start=True)
+        app.pause_queue()
+        previous_output=Path(job['output'])
+        app.enqueue([self.item['id']],self.settings)
+        self.assertEqual(Path(app.STATE['jobs'][-1]['output']).name,previous_output.stem+'_002'+previous_output.suffix)
 
     def test_manual_quality_and_custom_bitrate(self):
         for mode, extra in [('crf', {'qualityValue': '21'}), ('custom', {'customBitrate': '7.5'})]:
@@ -274,6 +276,16 @@ class IntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'MKV'):
             app.command_for(source, self.root / 'bad.mp4', {**self.settings, 'audio': 'flac'})
 
+    def test_reported_average_bitrate_does_not_reuse_quality_or_cbr(self):
+        for rate_mode in ['crf', 'cqp', 'cbr', 'vbr', '']:
+            metadata = {'codec': 'h264', 'video_bitrate': 2345678, 'rate_mode': rate_mode, 'source_quality': 19}
+            command = app.command_for(self.source, self.root / 'out.mp4', {**self.settings, 'bitrate': 'average', 'sourceMetadata': metadata})
+            self.assertEqual(command[command.index('-b:v') + 1], '2345678')
+            self.assertNotIn('-crf', command)
+            self.assertNotIn('-maxrate', command)
+        with self.assertRaisesRegex(ValueError, 'No reported average'):
+            app.command_for(self.source, self.root / 'out.mp4', {**self.settings, 'bitrate': 'average', 'sourceMetadata': {'codec': 'h264', 'rate_mode': 'crf', 'source_quality': 19}})
+
     def test_automatic_metadata_modes(self):
         base = {**self.settings, 'bitrate': 'auto'}
         for rate_mode in ['vbr', 'cbr', '']:
@@ -283,7 +295,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual('-maxrate' in command, rate_mode == 'cbr')
         command = app.command_for(self.source, self.root / 'out.mp4', {**base, 'sourceMetadata': {'codec': 'h264', 'rate_mode': 'crf', 'source_quality': 19}})
         self.assertEqual(command[command.index('-crf') + 1], '19')
-        with self.assertRaisesRegex(ValueError, 'Automatic cannot find'):
+        with self.assertRaisesRegex(ValueError, 'No reusable quality value or reported video bitrate'):
             app.command_for(self.source, self.root / 'out.mp4', {**base, 'sourceMetadata': {'codec': 'h264'}})
 
 

@@ -1,0 +1,17 @@
+# Saved output presets
+
+The Presets button beside the Output settings heading opens a compact panel. Save as creates a named preset from the current controls. Selecting a saved preset fills those controls for review; it does not select files, add jobs or start encoding. Manage offers Update settings, Rename and Delete preset. Editing controls marks the selected preset Modified while leaving its saved configuration unchanged. Update settings explicitly replaces it. Default settings restores the built-in controls, including hidden options and proxy defaults; Apply also resets them when Default settings is already selected but controls were edited. Default settings cannot be renamed or deleted. Deleting a user preset returns the controls to these defaults.
+
+Presets include codec, encoder method/backend, quality mode and values, encoder tuning, resolution, frame rate, audio settings, container, filename template and destination. Proxy mode preserves its codec and Half/Quarter choice; ProRes saves its profile. The user's output folder is saved, while the Media Pool source folder is not. Unavailable encoders still fail normal availability checks; saving a preset does not install hardware or dependencies.
+
+Automated (Test) saves its XPSNR target and encoder preferences, not test results or source-specific bindings. A new matching test must be applied before queueing. A manually reviewed quantizer from tested settings can be saved as a manual configuration; the original measured score is not a guarantee for other footage. Permanent deletion confirmations and delete-original checkboxes are not restored.
+
+Presets are stored in output-presets.json beside tools.json: %LOCALAPPDATA%/Archiver on Windows, or $XDG_CONFIG_HOME/archiver (default ~/.config/archiver) on Linux. They survive moving to another versioned application folder. Names are case-insensitively unique, 1–80 characters; up to 100 presets are supported. Writes are atomic and serialized within an application process. Invalid preset files report an error and are not overwritten. No source files are modified by preset operations.
+
+Validation covers create/reload/update/rename/delete, invalid and duplicate names, source/test-binding exclusion, corrupt-file preservation and concurrent saves. Browser checks cover modified-state tracking, audio and quality restoration, Proxy and Automated Test modes, reload persistence, both themes, narrow layouts and actual queue admission without starting encoding.
+
+## Startup preset
+
+Select a preset in the panel and check Use selected preset on startup. Archiver applies it when the interface opens or reloads, after encoder availability has loaded. Clearing that checkbox returns startup to built-in defaults while leaving the currently applied preset in place. Selecting Default settings and enabling startup likewise chooses built-in defaults. The choice is stored as defaultId beside the preset list. Existing files without this field use built-in defaults. Renaming/updating a preset retains its startup choice by ID; deletion or a missing ID falls back to built-in defaults. Startup restores settings only, without choosing source files, running tests or encoding.
+
+The header button shows the active preset name (Default settings for built-in defaults) and Modified whenever controls differ from the saved baseline. Long names truncate visually, with the full name and modification state in the tooltip and accessible label. Renaming changes the button immediately without marking settings modified.

@@ -1,53 +1,33 @@
 # Archiver
 
-Archiver helps save storage space by transcoding video footage at lower quality or with more efficient codecs. It provides a local browser interface powered by FFMPEG, so you can review a folder of footage, choose what to keep, and batch-encode smaller archive copies.
+Archiver is a simple browser-based tool that uses FFmpeg to select and transcode video files to reduce file size. Choose automated quality tests, bitrate estimates or manual controls, and manage originals and outputs with batch workflows. This Windows release supports H.264, H.265, AV1 and ProRes.
 
-## Features
+## 0.3 release candidate
 
-- Scan folders and review file sizes, codecs, resolution, and frame rate.
-- Browse resizable thumbnails with hover previews or use a detailed file list.
-- Choose software or hardware encoders, including NVIDIA NVENC, Intel Quick Sync, and AMD AMF when available.
-- Adjust video quality, bitrate, resolution, frame rate, and audio settings.
-- Keep originals, replace them, or save transcoded files to another directory.
-- Add filename suffixes or batch names and monitor jobs in a separate queue.
-- Use light or dark mode.
+[Download the release candidate](https://github.com/technicallyalex/Archiver/releases/tag/v0.3.0-rc.1). Extract the download, then open Archiver.exe in the application folder. This is a prerelease for testing, not a stable release.
 
-## Screenshots
+Use **Feedback** in the app header to open a GitHub issue with the version and browser prefilled. You review and submit it yourself. See the [QA report](docs/QA_0_3_RC1.md) for tested workflows and known limits.
 
-Media library with thumbnail previews, file metadata, and encoding controls. Screenshots use generated sample videos.
+## Running a build
 
-![Media library in dark mode](docs/screenshots/media-library.png)
+Open the versioned folder under `dist` and double-click **Archiver.exe**. Keep `_internal` beside it. Python is bundled; you do not need to install it. FFmpeg and FFprobe remain external tools, detected from PATH or selected through the app. Archiver opens your browser and provides a tray icon for reopening, queue controls and quitting.
 
-<details>
-<summary>More views: light theme, file list, queue, and FFmpeg output</summary>
-
-**Detailed file list and light theme**
-
-![Detailed file list in light mode](docs/screenshots/list-view-light.png)
-
-**Encoding queue**
-
-![Completed encoding jobs with progress bars and speed](docs/screenshots/encoding-queue.png)
-
-**Verbose FFmpeg output**
-
-![Encoding queue showing detailed FFmpeg output](docs/screenshots/ffmpeg-output.png)
-
-</details>
-
-## Getting started
-
-1. Install [Python 3.10 or newer](https://www.python.org/downloads/) and download [FFmpeg and FFprobe](https://ffmpeg.org/download.html) for your platform. They are not bundled with Archiver.
-2. Download and extract the app from [Releases](https://github.com/technicallyalex/Archiver/releases).
-3. Install the monitoring dependency with `python -m pip install -r requirements.txt`.
-4. On Windows, double-click **Launch Archiver.bat**, or run `python app.py` from the project folder.
-5. Open **FFmpeg settings** if the tools are not detected automatically.
-6. Scan a folder, select videos, choose output settings, and add them to the queue. Click **Start queue** to begin.
-
-Reducing quality, resolution, or frame rate can save space at the cost of detail or motion smoothness. Results depend on the source and encoder settings. Current output is 8-bit and does not include HDR tone mapping, so review a sample before replacing important footage.
-
-See the [usage guide](docs/USAGE.md) for naming options, original-file handling, encoding controls, and limitations. See the [changelog](CHANGELOG.md) for release history.
+Builds are folders by default, with no installer or ZIP required. Previous folders remain available for rollback. Quit a running version before switching versions. Logs are in `%LOCALAPPDATA%\Archiver\logs`.
 
 ## Development
 
-System monitoring uses psutil from `requirements.txt`; GPU readings use NVIDIA’s installed `nvidia-smi` when available. Run `python -m unittest discover -s tests -v` to test and `python build_release.py` to package the app. Integration tests require FFmpeg and FFprobe; the Recycle Bin test is Windows-only. The release version is read from `VERSION`.
+- `app.py` and the supporting Python modules: processing service and queues.
+- `web/`: shared browser interface.
+- `tests/`: automated checks.
+- `docs/`: feature documentation; older notes are historical.
+- `packaging/`: executable entry point and build dependencies.
+- `scripts/legacy/`: preserved old Python/script launchers, no longer shipped.
+- `build/`: ignored executable build intermediates.
+- `dist/`: ignored versioned user-facing builds.
+- `.test-temp/` and `comparisons/`: retained local validation artifacts, not shipped.
+
+Run from source with `python app.py --tray` on Windows. Install runtime requirements with `python -m pip install --target .dependencies -r requirements.txt`. Build on Windows with `python -m pip install -r packaging/requirements-build.txt`, then `python build_release.py`. ZIP packaging is available only with `--zip`.
+
+The builder checks bundled web assets, ab-av1, the native terminal and Tk folder-picker runtime before creating the distribution. Native folder picking uses a separate executable helper process. Source code, tests, development scripts and scratch files are excluded from user builds.
+
+See [per-file testing](docs/PER_FILE_TESTING.md), [import exclusions](docs/IMPORT_FILTERS.md), and [XPSNR testing](docs/AUTO_XPSNR.md). Earlier README content is preserved in `docs/history/README-preview49.md`.

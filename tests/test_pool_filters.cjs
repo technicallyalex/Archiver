@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync(require('node:path').join(__dirname,'../web/app.js'),'utf8');
+const a=source.indexOf('const poolFilterDefinitions='),b=source.indexOf('const poolFilterPickers=',a);
+const context=vm.createContext({});vm.runInContext(source.slice(a,b),context);
+const c=source.indexOf('function matchesPoolFilters('),d=source.indexOf('function populatePoolFilters(',c);
+vm.runInContext(source.slice(c,d),context);
+const match=(file,choices)=>{context.file=file;context.choices=new Map(Object.entries(choices));return vm.runInContext('matchesPoolFilters(file,choices)',context)};
+const file={name:'clip.mp4',codec:'h264',width:1920,height:1080,fps:59.94};
+assert(match(file,{}));assert(match(file,{filterCodec:['h264','av1']}));assert(!match(file,{filterCodec:['hevc','av1']}));
+assert(match(file,{filterCodec:['h264','av1'],filterResolution:['1920x1080','3840x2160'],filterFps:['59.94','30'],filterFormat:['mp4','mov']}));
+assert(!match(file,{filterCodec:['h264','av1'],filterResolution:['1280x720']}));
+assert(!match(file,{filterFps:['60']}));assert(match({...file,codec:''},{filterCodec:['unknown']}));
+assert(match(file,{filterCodec:[]}));
+console.log('Media Pool filter choices use OR within each filter and AND between filters, with exact FPS and unknown-value handling.');

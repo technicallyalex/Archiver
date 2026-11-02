@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .test-temp/
+comparisons/
 dist/
 
 .venv/
@@ -10,3 +11,9 @@ dist/
 Thumbs.db
 
 .dependencies/
+
+build/
+
+# Local design drafts and machine-specific audit evidence
+design/
+docs/reviews/
