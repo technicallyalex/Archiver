@@ -4,7 +4,7 @@ Archiver is a simple browser-based tool that uses FFmpeg to select and transcode
 
 ## 0.3 release candidate
 
-[Download the release candidate](https://github.com/technicallyalex/Archiver/releases/tag/v0.3.0-rc.1). Extract the download, then open Archiver.exe in the application folder. This is a prerelease for testing, not a stable release.
+[Download the release candidate](https://github.com/technicallyalex/Archiver/releases/tag/v0.3.0-rc.8). Extract the download, then open Archiver.exe in the application folder. This is a prerelease for testing, not a stable release.
 
 Use **Feedback** in the app header to open a GitHub issue with the version and browser prefilled. You review and submit it yourself. See the [QA report](docs/QA_0_3_RC1.md) for tested workflows and known limits.
 

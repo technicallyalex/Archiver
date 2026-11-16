@@ -1,3 +1,31 @@
+# 0.3.0-rc.8 — Release candidate
+
+- Made the source-folder field expand into available import-row space as the window grows, retaining compact controls and responsive wrapping.
+
+# 0.3.0-rc.7 — Local candidate
+
+- Reduced the source-folder field width and compacted import controls so metadata mode and import options share one row where space permits.
+
+# 0.3.0-rc.6 — Local candidate
+
+- Integrated output settings directly into each encoding queue card as compact wrapping label/value rows, removing the nested panel.
+
+# 0.3.0-rc.5 — Local candidate
+
+- Added an always-visible output settings summary to each encoding queue entry, using its saved configuration and resolved encoder parameters.
+
+# 0.3.0-rc.4 — Local candidate
+
+- Added Import cache settings with a persistent user-selected directory, entry count, storage usage and safe copy to a new empty location. Repeat imports reuse unchanged metadata without FFprobe.
+
+# 0.3.0-rc.3 — Local candidate
+
+- Added Files only import, which lists video files and sizes without probing metadata or generating previews. Analyze selected files later while retaining selection and file identity.
+
+# 0.3.0-rc.2 — Local candidate
+
+- Added Match source container for per-file MP4, MOV, MKV and WebM output, including mixed-container replacement batches. Container and codec compatibility checks remain active.
+
 # 0.3.0-rc.1
 
 First public release candidate for Archiver 0.3.

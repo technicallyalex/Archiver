@@ -243,6 +243,7 @@ def validate_estimate_source(item):
 
 def source_preset(item, settings):
     """Documentation-guided codec/bitrate estimates; not measured equivalence."""
+    settings=match_container(item,settings)
     name = settings.get('sourcePreset', '100')
     if name not in ['100', '75', '50', 'optimized']:
         raise ValueError('Choose an Estimated bitrate level')
@@ -409,7 +410,7 @@ def enqueue_tests(ids, settings, directory='', encode_settings=None, encode_auto
         raise ValueError('Quality tests need FFmpeg with ' + 'XPSNR')
     if settings.get('qualityMode') not in [*POLICIES, 'auto']:
         raise ValueError('Choose Auto to generate measured presets')
-    if settings.get('container') not in ['mp4', 'mkv', 'webm']:
+    if settings.get('container') not in ['mp4', 'mkv', 'webm', 'mov', 'source']:
         raise ValueError('Choose an output container')
     candidates(STATE['encoders'], settings.get('encodingMode'), settings.get('priority'), settings['container'], settings.get('hardwareBackend', 'nvenc'))
     pool_directory=STATE.get('scan',{}).get('directory')
@@ -441,6 +442,8 @@ def enqueue_tests(ids, settings, directory='', encode_settings=None, encode_auto
             item = TEST_FILES.get(fid) or STATE['files'].get(fid)
             if not item:
                 raise ValueError('Test source is no longer available. Load the directory again.')
+            require_metadata(item)
+            match_container(item, settings)
             validate_source(item)
             test_directory = destination or Path(item['path']).resolve(strict=True).parent
             if any(j['source'] == item['path'] and j['settings'] == preferences and j['status'] in ['queued', 'waiting', 'running'] for j in TEST_JOBS):
@@ -824,15 +827,48 @@ def import_workers(options):
     return workers
 
 
-def scan(directory, recursive, workers=1, excluded_folders=None, skip_parent_copies=False, exclude_test_folders=True, adaptive=False):
+def file_listing(path):
+    stat=path.stat()
+    return dict(id=secrets.token_hex(12),path=str(path),name=path.name,size=stat.st_size,
+                sourceMtimeNs=stat.st_mtime_ns,metadataPending=True,codec='Unknown',width=0,height=0,
+                fps=0,duration=0,bitrate=0,video_bitrate=0,audio='',container=path.suffix.lstrip('.'))
+
+
+def analyze_pool(ids):
+    try:
+        cache=metadata_cache.Cache();tool=metadata_cache.tool_signature(STATE['ffprobe'])
+        for fid in ids:
+            if SCAN_STOP.is_set():break
+            with LOCK:item=STATE['files'].get(fid)
+            if not item:continue
+            try:
+                with LOCK:STATE['scan'].update(current=item['path'])
+                full=import_metadata.read(Path(item['path']),probe,cache,tool,SCAN_STOP)
+                with LOCK:STATE['files'][fid]={**full,'id':fid,'metadataPending':False}
+            except InterruptedError:break
+            except Exception as exc:
+                with LOCK:STATE['scan']['errors'].append(f"{item['name']}: {exc}")
+            finally:
+                with LOCK:STATE['scan']['done']+=1
+    finally:
+        with LOCK:STATE['scan'].update(running=False,phase='stopped' if SCAN_STOP.is_set() else 'complete',finished=time.time(),current='')
+        notification_history.add('Media analysis complete',f"{STATE['scan']['done']} files processed",'error' if STATE['scan']['errors'] else 'success','import')
+
+
+def require_metadata(item):
+    if item.get('metadataPending'):
+        raise ValueError('Select the files in the Media Pool and choose Analyze selected before encoding or testing.')
+
+
+def scan(directory, recursive, workers=1, excluded_folders=None, skip_parent_copies=False, exclude_test_folders=True, adaptive=False, files_only=False):
     # skip_parent_copies is accepted only for older callers and intentionally ignored.
     excluded=import_filters.folder_names(excluded_folders)
     started = time.time()
-    cache=metadata_cache.Cache();tool=metadata_cache.tool_signature(STATE['ffprobe'])
+    cache=metadata_cache.Cache() if not files_only else None;tool=metadata_cache.tool_signature(STATE['ffprobe']) if not files_only else None
     admission=import_admission.Admission(workers,time.monotonic()) if adaptive and workers>1 else None
     with LOCK:
         STATE['scan'].update(phase='discovering', started=started, finished=None,
-                             workers=workers, workerLimit=admission.limit if admission else workers, adaptive=bool(admission), cached=0, inspected=0, fast=0, fallbacks=0, timeouts=0, cachePath=str(cache.path), cacheWarning='', excludedFolders=0, active={}, current='', entries=0, folders=0, recent=[], file_started=None)
+                             workers=workers, workerLimit=admission.limit if admission else workers, adaptive=bool(admission), cached=0, inspected=0, fast=0, fallbacks=0, timeouts=0, cachePath=str(cache.path) if cache else '', cacheWarning='', excludedFolders=0, active={}, current='', entries=0, folders=0, recent=[], file_started=None)
         STATE['files'] = {}
     def recent(message):
         STATE['scan']['recent'] = (STATE['scan']['recent'] + [message])[-8:]
@@ -871,7 +907,7 @@ def scan(directory, recursive, workers=1, excluded_folders=None, skip_parent_cop
                         STATE['scan']['total'] = len(paths)
         if admission:admission=import_admission.Admission(workers,time.monotonic())
         with LOCK:
-            STATE['scan'].update(phase='probing', current='', file_started=None)
+            STATE['scan'].update(phase='listing' if files_only else 'probing', current='', file_started=None)
             recent(f'Discovered {len(paths)} video files')
         def inspect(path):
             fresh=False;failed=False
@@ -891,7 +927,7 @@ def scan(directory, recursive, workers=1, excluded_folders=None, skip_parent_cop
                 STATE['scan']['active'][str(path)] = time.time()
                 STATE['scan'].update(current=' | '.join(STATE['scan']['active']), file_started=min(STATE['scan']['active'].values()))
             try:
-                item = import_metadata.read(path,probe,cache,tool,SCAN_STOP,notify)
+                item = file_listing(path) if files_only else import_metadata.read(path,probe,cache,tool,SCAN_STOP,notify)
                 fresh=item.get('metadataSource')!='cache'
                 with LOCK:
                     STATE['files'][item['id']] = item
@@ -951,7 +987,22 @@ def scan(directory, recursive, workers=1, excluded_folders=None, skip_parent_cop
         except (OSError,ValueError):pass
 
 
+def match_container(item, settings):
+    """Resolve the source option per file, never from FFprobe's ambiguous format list."""
+    if settings.get('container') != 'source':
+        return settings
+    container = Path(item['path']).suffix.lower().lstrip('.')
+    if container not in ('mp4', 'mkv', 'webm', 'mov'):
+        raise ValueError(f"Cannot match the container of {Path(item['path']).name}. Choose MP4, MKV, MOV or WebM explicitly.")
+    if container == 'webm' and settings.get('codec', settings.get('abCodec')) not in ('av1', None):
+        raise ValueError('Matching a WebM source requires AV1 video. Choose AV1 or another output container.')
+    return {**settings, 'container': container}
+
+
 def command_for(source, output, settings):
+    settings=match_container({"path":str(source)},settings)
+    if settings.get('container')=='webm' and settings.get('audio','aac') not in ('opus','copy'):
+        raise ValueError('WebM requires Opus or Copy original audio. Change the audio codec or output container.')
     command=_base_command_for(source,output,settings)
     return preservation.command(command,settings.get('sourceMetadata') or {},settings)
 
@@ -1110,7 +1161,7 @@ def output_size_estimate(items, settings, reports=()):
             if not math.isfinite(duration) or duration<=0:raise EstimateError('source_timing','Duration unavailable')
             if settings.get('mode') in ('copy','move'):
                 total+=item['size'];continue
-            resolved=source_preset(item,settings) if settings.get('qualityMode')=='source' else settings
+            resolved=source_preset(item,settings) if settings.get('qualityMode')=='source' else match_container(item,settings)
             if resolved.get('qualityMode')=='proxy':
                 proxy_item={**item,'audio_streams':preservation.audio_metadata(item,resolved)}
                 if not proxy_item['audio_streams']:proxy_item['audio']=''
@@ -1165,7 +1216,7 @@ def encoding_details(items, settings):
             mode=settings.get('qualityMode','custom')
             if mode=='auto':
                 rows.append({'name':item['name'],'pending':True,'note':'Apply a completed test result to review its settings.'});continue
-            resolved=source_preset(item,settings) if mode=='source' else dict(settings)
+            resolved=source_preset(item,settings) if mode=='source' else dict(match_container(item,settings))
             resolved['sourceMetadata']=item
             output=Path('OUTPUT.'+(proxy_media.container_for(resolved) if mode=='proxy' else 'mov' if mode=='archive' else resolved.get('container','mp4')))
             command=command_for(Path(item['path']),output,resolved)
@@ -1281,6 +1332,7 @@ def recommend_quality(items, settings):
 
 
 def output_name(item, settings, index=1):
+    settings=match_container(item,settings)
     if settings.get('qualityMode')=='proxy':return proxy_media.output_path(item,settings).name
     if settings.get('qualityMode') == 'archive':
         profile = settings.get('archiveProfile', 'ffv1')
@@ -1408,7 +1460,7 @@ def enqueue(ids, settings, auto_start=False, dry_run=False, source_items=None):
     if mode == 'overwrite' and settings.get('deleteOriginal') is True and settings.get('confirmDelete') is not True:
         raise ValueError('Confirm that you understand the original files will be permanently deleted')
     container = settings.get('container', 'mp4')
-    if container not in (['mp4', 'mkv', 'webm', 'mov'] if quality_mode in ('archive','proxy') else ['mp4', 'mkv', 'webm']):
+    if container not in (['mp4', 'mkv', 'webm', 'mov'] if quality_mode in ('archive','proxy') else ['mp4', 'mkv', 'webm', 'mov', 'source']):
         raise ValueError('Invalid container')
     if container == 'webm' and not (measured or original or requested == 'source') and mode not in ['copy', 'move'] and settings.get('codec') not in ['av1', 'vp9']:
         raise ValueError('WebM requires AV1 or VP9 video')
@@ -1428,10 +1480,11 @@ def enqueue(ids, settings, auto_start=False, dry_run=False, source_items=None):
             item = (source_items if source_items is not None else STATE['files']).get(fid)
             if not item:
                 raise ValueError('A selected file is no longer in the library. Scan again.')
+            require_metadata(item)
             source = Path(item['path'])
             stat=source.stat()
             if stat.st_size!=item.get('size',stat.st_size) or (item.get('sourceMtimeNs') and stat.st_mtime_ns!=item['sourceMtimeNs']):raise ValueError('Source changed since import. Import the file again before queueing.')
-            file_settings = source_preset(item, settings) if requested == 'source' else settings
+            file_settings = match_container(item, source_preset(item, settings) if requested == 'source' else settings)
             if requested=='proxy':file_settings={**file_settings,'encoder':proxy_media.encoder_for(settings,[*STATE.get('archive_encoders',[]),*STATE.get('encoders',[])],item)}
             if measured:
                 validate_source(item)
@@ -1442,8 +1495,8 @@ def enqueue(ids, settings, auto_start=False, dry_run=False, source_items=None):
             elif mode in ['copy', 'move']:
                 output = destination / output_name(item, file_settings, index)
             elif mode == 'overwrite':
-                if source.suffix.lower() != '.' + container:
-                    raise ValueError('Replacing originals requires the output container to match every selected file extension. Use a new output directory instead.')
+                if source.suffix.lower() != '.' + file_settings.get('container', 'mp4'):
+                    raise ValueError('Replacing originals requires the output container to match every selected file extension. Choose Match source container or save to another folder.')
                 output = source
             else:
                 output = (destination or source.parent) / output_name(item, file_settings, index)
@@ -1467,6 +1520,8 @@ def enqueue(ids, settings, auto_start=False, dry_run=False, source_items=None):
             if bound:job_settings.update({k:bound['winner'][k] for k in ['codec','encoder','bitrate','qualityValue','encoderPriority']})
             new_jobs.append({'conversionNotes':preservation.conversion_notes(item,job_settings),'workflowOptions':dict(WORKFLOW_OPTIONS),'testedAnalysis':bound,'testedAnalysisKey':bound_key,'id': secrets.token_hex(10), 'name': source.name, 'source': str(source), 'outputBase':str(output_base), 'output': str(output), 'settings': job_settings, 'duration': item['duration'], 'source_size': stat.st_size,'source_mtime_ns':stat.st_mtime_ns, 'output_size': None, 'status': 'queued', 'percent': 0, 'speed': '', 'fps': '', 'eta': None, 'log': collections.deque(maxlen=1500), 'cancel': False, 'error': ''})
         if dry_run:return
+        for job in new_jobs:
+            job['encodingDetails']=encoding_details([job['settings']['sourceMetadata']],{**job['settings'],'qualityMode':'custom' if job['settings'].get('qualityMode') in POLICIES else job['settings'].get('qualityMode','custom')})['files'][0]
         STATE['jobs'].extend(new_jobs)
     checkpoint()
     with LOCK:
@@ -1675,6 +1730,7 @@ def execute_job(job):
                 return
             winner = result['winner']
             job['settings'].update({k: winner[k] for k in ['codec', 'encoder', 'bitrate', 'qualityValue', 'encoderPriority']})
+            job['encodingDetails']=encoding_details([job['settings'].get('sourceMetadata') or metadata],{**job['settings'],'qualityMode':'custom'})['files'][0]
             progress('Encoding with validated settings')
         if job['cancel']:
             raise InterruptedError('Job cancelled')
@@ -2046,6 +2102,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(target.read_bytes(), content_type='image/jpeg')
             except Exception:
                 return self.send({'error': 'Thumbnail unavailable'}, 422)
+        if url.path == '/api/import-cache':return self.send(metadata_cache.info())
         if url.path in ['/api/thumbnail', '/api/media']:
             query = parse_qs(url.query)
             fid=query.get('id', [''])[0]
@@ -2061,6 +2118,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'error': 'File not found'}, 404)
             path = Path(item['path'])
             if url.path == '/api/thumbnail':
+                if item.get('metadataPending'):return self.send({'error':'Analyze this file to load previews'},404)
                 try:
                     second = max(0, min(float(query.get('t', ['0'])[0]), max(0, item['duration'] - .1)))
                     target = Path(CACHE.name) / f"{item['id']}-{int(second)}.jpg"
@@ -2091,7 +2149,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(length))
             path = urlparse(self.path).path
-            if path in {'/api/scan','/api/test-scan','/api/test-queue','/api/start-tests','/api/queue','/api/start'}:require_video_tools()
+            if path=='/api/scan' and body.get('files_only') is not True:require_video_tools()
+            if path in {'/api/analyze-files','/api/test-scan','/api/test-queue','/api/start-tests','/api/queue','/api/start'}:require_video_tools()
             if path == '/api/ab-av1-check':
                 return self.send(ab_av1.installation(recheck=True))
             elif path == '/api/setup-tools':
@@ -2122,7 +2181,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'key':key})
             elif path == '/api/preservation-preview':
                 with LOCK:items=[STATE['files'][fid] for fid in body.get('ids',[])[:24] if fid in STATE['files']]
-                return self.send({'files':[preservation.summary(item,body['settings']) for item in items]})
+                return self.send({'files':[preservation.summary(item,match_container(item,body['settings'])) for item in items]})
             elif path == '/api/preset-export':
                 return self.send(output_presets.portable_export(body.get('id')))
             elif path == '/api/preset-import':
@@ -2165,6 +2224,18 @@ class Handler(BaseHTTPRequestHandler):
                     if STATE['scan']['running']:
                         SCAN_STOP.set()
                         STATE['scan']['stopping'] = True
+            elif path == '/api/import-cache':
+                with LOCK:
+                    if STATE['scan']['running']:raise ValueError('Wait for importing or analysis to finish before changing the cache folder')
+                    return self.send(metadata_cache.configure(body.get('directory','')))
+            elif path == '/api/analyze-files':
+                with LOCK:
+                    if STATE['scan']['running']:raise ValueError('An import or analysis is already running')
+                    ids=[fid for fid in dict.fromkeys(body.get('ids',[])) if fid in STATE['files'] and STATE['files'][fid].get('metadataPending')]
+                    if not ids:raise ValueError('Select files whose metadata has not been read')
+                    SCAN_STOP.clear()
+                    STATE['scan']={'running':True,'phase':'probing','started':time.time(),'done':0,'total':len(ids),'errors':[],'current':'','directory':STATE['scan'].get('directory',''),'recent':[]}
+                threading.Thread(target=analyze_pool,args=(ids,),daemon=True).start()
             elif path == '/api/scan':
                 workers = import_workers(body)
                 excluded_folders=body.get('excluded_folders')
@@ -2174,11 +2245,11 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     if STATE['scan']['running']:
                         raise ValueError('A scan is already running')
-                    if not STATE['encoders']:
+                    if not body.get('files_only') and not STATE['encoders']:
                         raise ValueError('Locate FFmpeg and FFprobe in FFmpeg settings first')
                     SCAN_STOP.clear()
                     STATE['scan'] = {'running': True, 'done': 0, 'total': 0, 'errors': []}
-                threading.Thread(target=scan, args=(body['directory'], bool(body.get('recursive')), workers, excluded_folders, skip_parent_copies, exclude_test_folders), kwargs={'adaptive':body.get('workers','auto')=='auto'}, daemon=True).start()
+                threading.Thread(target=scan, args=(body['directory'], bool(body.get('recursive')), workers, excluded_folders, skip_parent_copies, exclude_test_folders), kwargs={'adaptive':body.get('workers','auto')=='auto','files_only':body.get('files_only') is True}, daemon=True).start()
             elif path == '/api/test-scan':
                 with LOCK:
                     if TEST_SCAN['running']:
@@ -2249,7 +2320,7 @@ class Handler(BaseHTTPRequestHandler):
                     for index,item in enumerate(items[:3],int(settings.get('_batchSequence',1))):
                         if not body.get('ids') or (mode=='directory' and not settings.get('destination','').strip()):
                             names.append(output_name(item,settings,index));continue
-                        resolved=source_preset(item,settings) if settings.get('qualityMode')=='source' else settings
+                        resolved=source_preset(item,settings) if settings.get('qualityMode')=='source' else match_container(item,settings)
                         source=Path(item['path'])
                         desired=proxy_media.output_path(item,resolved) if settings.get('qualityMode')=='proxy' else (Path(settings['destination']).expanduser().resolve() if mode in ('directory','copy','move') else source.parent)/output_name(item,resolved,index)
                         actual=desired if mode=='overwrite' else allocator.reserve(desired)

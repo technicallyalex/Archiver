@@ -214,3 +214,25 @@ html[data-theme=light] .job-comparison{color:#147a38}
 .test-depth-badge {font-size:11px;color:var(--muted);white-space:nowrap;}
 
 .header-actions .feedback-link{display:inline-flex;align-items:center;text-decoration:none;color:var(--text)}.feedback-link:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+/* Settings belong to each queue card, without a nested surface. */
+.queue-output-settings{margin:8px 0 12px}
+.queue-output-settings dl{display:flex;flex-wrap:wrap;gap:6px 18px;margin:0}
+.queue-output-settings dl>div{display:flex;gap:5px;align-items:baseline;min-width:0;max-width:100%}
+.queue-output-settings dt{font-size:12px;color:var(--muted);flex-shrink:0}
+.queue-output-settings dt::after{content:':' }
+.queue-output-settings dd{margin:0;font-size:12px;overflow-wrap:anywhere}
+
+/* Compact import controls share a row when the workspace has room. */
+body[data-pane=library] .import-bar{gap:8px}
+body[data-pane=library] .import-bar .directory-field{flex:1 1 160px;min-width:140px;max-width:none}
+.import-bar #importMode{flex:0 0 auto;width:145px;min-width:0;height:41px;margin:0;font-size:12px}
+.import-bar .parallel-import-controls{flex:0 0 auto;flex-wrap:nowrap;gap:6px}
+.import-bar .button{padding-left:10px;padding-right:10px;white-space:nowrap}
+.import-bar .subfolder-controls{gap:6px}
+.import-bar .check-label{white-space:nowrap;font-size:12px}
+.import-bar .parallel-import-controls #scanWorkers{width:88px;min-width:88px}
+@media(max-width:760px){
+ body[data-pane=library] .import-bar .directory-field{flex:1 1 100%;max-width:none;min-width:0}
+ .import-bar .parallel-import-controls{flex-wrap:wrap;max-width:100%}
+}

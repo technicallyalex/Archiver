@@ -1,3 +1,13 @@
+# Import cache
+
+Open **Import cache…** beside the import mode in the Media Pool. Type or browse to a writable cache folder, then choose **Save cache folder**. The location is saved between restarts and shared by future local builds. **Default** selects the standard per-user location; save to apply it.
+
+The panel displays the number of cached files and storage used. Choosing a new empty folder copies the existing SQLite database, including committed journal data. An existing destination cache is reused without overwriting it. The previous database remains available for rollback. Changes are blocked while importing or analyzing files.
+
+Repeat imports in **Read metadata** mode reuse unchanged metadata. File discovery and size/timestamp checks still run; cached files avoid FFprobe. **Files only** continues to skip metadata and previews entirely; use **Analyze selected** to read or reuse metadata later. The cache stores metadata rather than encoded test clips or preview images. A local SSD is recommended for the cache even when footage is on network storage.
+
+The ARCHIVER_CACHE_DIR environment override takes precedence and makes the folder controls read-only for that session.
+
 # Metadata cache and importing
 
 Media Pool imports use a persistent local SQLite index. It stores metadata only, not video, thumbnails, queue state or tested-quality results. Sources are never modified.
