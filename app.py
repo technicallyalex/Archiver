@@ -42,6 +42,7 @@ import workflow_store
 import preservation
 import output_verification
 import encode_reports
+import replacement_stage
 import storage_checks
 import comparison
 import watch_folders
@@ -1441,6 +1442,10 @@ def enqueue(ids, settings, auto_start=False, dry_run=False, source_items=None):
                     'xpsnrTarget': ab_av1.target_for(auto_report['settings']),
                     'qualityMode': profile, 'priority': 'balanced', 'requestedQualityMode': 'auto', 'autoTestId': auto_report['id']}
     mode = settings.get('mode', 'preserve')
+    if mode=='overwrite' and settings.get('replacementTempDirectory'):
+        working=Path(settings['replacementTempDirectory']).expanduser()
+        if not working.is_absolute() or not working.is_dir():raise ValueError('Choose an existing full path for the replacement working folder')
+        settings={**settings,'replacementTempDirectory':str(working.resolve())}
     quality_mode = settings.get('qualityMode', 'custom')
     if quality_mode not in ['custom', 'original', 'source', 'archive', 'proxy', *POLICIES]:
         raise ValueError('Invalid quality mode')
@@ -1738,7 +1743,7 @@ def execute_job(job):
             try:storage_checks.guard(job)
             except (OSError,ValueError) as exc:job['storagePaused']=str(exc);raise ValueError(str(exc))
         if quality_mode == 'proxy':output.parent.mkdir(parents=True,exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix='.archiver-', suffix=output.suffix, dir=output.parent)
+        fd, tmp = tempfile.mkstemp(prefix='.archiver-', suffix=output.suffix, dir=job['settings'].get('replacementTempDirectory') if mode=='overwrite' and job['settings'].get('replacementTempDirectory') else output.parent)
         os.close(fd)
         temp = Path(tmp)
         job['temporaryOutput']=str(temp)
@@ -1838,7 +1843,9 @@ def execute_job(job):
                 verified = probe(temp)
                 if verified['duration'] <= 0:
                     raise ValueError('Output validation failed: no video duration')
-                replace_original(temp, output, job['settings'].get('deleteOriginal') is True)
+                if job['settings'].get('replacementTempDirectory'):
+                    replacement_stage.publish(temp,output,lambda backup:backup.unlink() if job['settings'].get('deleteOriginal') is True else recycle_file(backup),job,checkpoint)
+                else:replace_original(temp, output, job['settings'].get('deleteOriginal') is True)
             else:
                 output=publish_unique(job,temp,output)
                 if mode == 'move':
@@ -1852,7 +1859,7 @@ def execute_job(job):
                 except (OSError,ValueError) as exc:job['reportError']='Output saved, but its report could not be written: '+str(exc)
             with LOCK:job.update(status='completed',percent=100,eta=0,phase='Complete')
     except Exception as exc:
-        if not job['cancel'] and job.get('workflowOptions',{}).get('storage',WORKFLOW_OPTIONS['storage']) and storage_checks.write_failure(exc,job.get('log',[])):
+        if not job.get('replacementRecoveryRequired') and not job['cancel'] and job.get('workflowOptions',{}).get('storage',WORKFLOW_OPTIONS['storage']) and storage_checks.write_failure(exc,job.get('log',[])):
             job['storagePaused']='Output storage is full or unavailable. Check the drive, then resume.'
         with LOCK:
             if job.get('storagePaused'):
@@ -1871,7 +1878,7 @@ def execute_job(job):
         if process:
             for stream in (process.stdout,process.stderr):
                 if stream and not stream.closed:stream.close()
-        if temp:
+        if temp and not job.get('replacementRecoveryRequired'):
             try:
                 temp.unlink(missing_ok=True)
                 job.pop('temporaryOutput',None)

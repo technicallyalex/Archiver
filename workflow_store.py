@@ -94,10 +94,13 @@ def completed(version,job):
 def restored_job(job,version):
     result=dict(job);result['log']=collections.deque(job.get('log') or [],maxlen=1500)
     result.update(cancel=False,committing=False,eta=None,speed='',fps='')
+    if job.get('replacementRecovery'):
+        result.update(status='failed',phase='Replacement recovery required',error='Replacement was interrupted. Keep the recovery files and inspect '+job['replacementRecovery'])
+        return result
     temporary=Path(job['temporaryOutput']) if job.get('temporaryOutput') else None
     output=Path(job['output']);owned=False
     if temporary:
-        owned=temporary.name.startswith('.archiver-') and temporary.suffix.lower()==output.suffix.lower() and temporary.parent.resolve()==output.parent.resolve() and temporary!=Path(job['source']) and not temporary.is_symlink()
+        owned=temporary.name.startswith('.archiver-') and temporary.suffix.lower()==output.suffix.lower() and temporary.parent.resolve()==Path(job.get('settings',{}).get('replacementTempDirectory') or output.parent).resolve() and temporary!=Path(job['source']) and not temporary.is_symlink()
         try:
             # A published hard link can survive a crash just before its receipt write.
             if owned and output.is_file() and temporary.samefile(output):receipt(version,result)
@@ -123,8 +126,9 @@ def restored_job(job,version):
 
 def cleanup_stage(job):
     """Retry only the validated staging ownership retained by recovery."""
+    if job.get('replacementRecovery'):raise ValueError('Resolve the interrupted replacement before retrying: '+job['replacementRecovery'])
     value=job.get('temporaryOutput')
     if not value:return
     stage=Path(value);output=Path(job['output'])
-    if not stage.name.startswith('.archiver-') or stage.parent.resolve()!=output.parent.resolve() or stage.suffix.lower()!=output.suffix.lower() or stage==Path(job['source']) or stage.is_symlink():raise ValueError('Invalid interrupted staging path')
+    if not stage.name.startswith('.archiver-') or stage.parent.resolve()!=Path(job.get('settings',{}).get('replacementTempDirectory') or output.parent).resolve() or stage.suffix.lower()!=output.suffix.lower() or stage==Path(job['source']) or stage.is_symlink():raise ValueError('Invalid interrupted staging path')
     stage.unlink(missing_ok=True);job.pop('temporaryOutput',None)

@@ -236,3 +236,6 @@ body[data-pane=library] .import-bar .directory-field{flex:1 1 160px;min-width:14
  body[data-pane=library] .import-bar .directory-field{flex:1 1 100%;max-width:none;min-width:0}
  .import-bar .parallel-import-controls{flex-wrap:wrap;max-width:100%}
 }
+
+/* Terminal refreshes must not re-anchor the surrounding queue viewport. */
+body[data-pane=queue] .workspace>main{overflow-anchor:none}

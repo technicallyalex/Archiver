@@ -1,3 +1,11 @@
+# 0.3.0-rc.10 — Release candidate
+
+- Fixed idle downward scrolling in Encoding Queue terminal view caused by browser scroll anchoring during progress refreshes. Terminal scrollback and follow-output behavior remain independent of the queue viewport.
+
+# 0.3.0-rc.9 — Local candidate
+
+- Added an optional replacement working folder. Encodes and verification run there; a verified backup frees source-disk space before transferring the verified encode back. Failed/interrupted transfers retain recovery files. Storage guards and saved presets support the working folder; portable presets omit machine-specific paths.
+
 # 0.3.0-rc.8 — Release candidate
 
 - Made the source-folder field expand into available import-row space as the window grows, retaining compact controls and responsive wrapping.

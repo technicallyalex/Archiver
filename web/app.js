@@ -126,6 +126,7 @@ function queueOutputSettingsHTML(job){
  const audioCodec=arg('-c:a','-c:a:0')||s.audio;
  const audio=Array.isArray(meta.audio_streams)&&!meta.audio_streams.length&&!meta.audio?'No audio':audioCodec==='copy'?'Copy original audio':audioCodec?`${({pcm_s24le:'PCM 24-bit',aac:'AAC',mp3:'MP3',libmp3lame:'MP3',libopus:'Opus',opus:'Opus',flac:'FLAC'})[audioCodec]||audioCodec}${arg('-b:a')?' · '+String(arg('-b:a')).replace('k',' kbps'):s.audioBitrate?.endsWith('k')?' · '+s.audioBitrate.replace('k',' kbps'):''}`:'Not recorded';
  const rows=[['Video',codec],['Encoder',detail.encoder||s.encoder||s.testedEncoder||'Not recorded'],['Quality',quality],['Resolution',resolution],['Frame rate',fps],['Audio',audio],['Container',(job.output?.split('.').pop()||s.container||'—').toUpperCase()]];
+ if(s.mode==='overwrite'&&s.replacementTempDirectory)rows.push(['Working folder',s.replacementTempDirectory]);
  if(detail.preset&&detail.preset!=='Encoder default')rows.splice(2,0,['Speed preset',detail.preset]);
  return `<div class="queue-output-settings"><dl aria-label="Output settings">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></div>`;
 }
@@ -772,7 +773,7 @@ $('testFilePicker').addEventListener('keydown',e=>{
 document.addEventListener('click',e=>{if(!$('testFilePicker').contains(e.target))$('testFilePicker').open=false;});
 $('testFilePicker').addEventListener('error',e=>{if(e.target.tagName==='IMG')e.target.classList.add('thumbnail-unavailable');},true);
 
-function encodingPreferences(){const settings={...Object.fromEntries(['proresProfile','testedEncoder','encoderPriority','archiveProfile','autoEngine','abTarget','abCodec','xpsnrTarget','qualityMode','autoPreset','autoTestId','sourcePreset','sourceCodec','encodingMode','hardwareBackend','codec','encoder','resolution','fps','bitrate','qualityValue','customBitrate','container','audio','audioBitrate','mode','destination','naming','nameSuffix','batchName','filenameTemplate'].map(id=>[id,$(id).value])),proresPreferFidelity:$('proresPreferFidelity').checked};return isProxyPreset()?{...settings,qualityMode:'proxy',proxyScale:$('outputPreset').value==='proxy-half'?'2':'4',proxyCodec:$('proxyCodec').value,proxyLocation:$('proxyLocation').value,codec:$('proxyCodec').value,encoder:proxyEncoder(),container:$('proxyCodec').value==='av1'?'mp4':'mov',resolution:'original',fps:'original',audio:'pcm_s24le',bitrate:'proxy',testedEncoder:''}:settings;}
+function encodingPreferences(){const settings={...Object.fromEntries(['proresProfile','testedEncoder','encoderPriority','archiveProfile','autoEngine','abTarget','abCodec','xpsnrTarget','qualityMode','autoPreset','autoTestId','sourcePreset','sourceCodec','encodingMode','hardwareBackend','codec','encoder','resolution','fps','bitrate','qualityValue','customBitrate','container','audio','audioBitrate','mode','destination','replacementTempDirectory','naming','nameSuffix','batchName','filenameTemplate'].map(id=>[id,$(id).value])),proresPreferFidelity:$('proresPreferFidelity').checked};return isProxyPreset()?{...settings,qualityMode:'proxy',proxyScale:$('outputPreset').value==='proxy-half'?'2':'4',proxyCodec:$('proxyCodec').value,proxyLocation:$('proxyLocation').value,codec:$('proxyCodec').value,encoder:proxyEncoder(),container:$('proxyCodec').value==='av1'?'mp4':'mov',resolution:'original',fps:'original',audio:'pcm_s24le',bitrate:'proxy',testedEncoder:''}:settings;}
 
 $('parallelScan').addEventListener('change',()=>{$('scanWorkers').disabled=!$('parallelScan').checked;});
 
@@ -903,7 +904,7 @@ $('encodingDetails').addEventListener('toggle',()=>{if($('encodingDetails').open
 for(const event of ['input','change'])document.querySelector('.encode-panel').addEventListener(event,()=>{updateEncodingSummary();scheduleEncodingDetails();});
 
 function isProxyPreset(){return $('qualityMode')?.value==='proxy';}
-const proxyRememberedFields=['outputCodec','codec','abCodec','sourceCodec','encodingMode','hardwareBackend','encoder','container','audio','audioBitrate','resolution','fps','bitrate','qualityValue','customBitrate','mode','destination','filenameTemplate','proxyLocation'];
+const proxyRememberedFields=['outputCodec','codec','abCodec','sourceCodec','encodingMode','hardwareBackend','encoder','container','audio','audioBitrate','resolution','fps','bitrate','qualityValue','customBitrate','mode','destination','replacementTempDirectory','filenameTemplate','proxyLocation'];
 function proxySnapshot(){return Object.fromEntries(proxyRememberedFields.map(id=>[id,$(id).value]));}
 function restoreProxySnapshot(saved){if(saved)for(const [id,value] of Object.entries(saved))if($(id))$(id).value=value;}
 function transitionProxyMode(){
@@ -1151,3 +1152,5 @@ $('importCacheClose').onclick=()=>$('importCacheDialog').close();
 $('importCacheDefault').onclick=()=>{$('importCacheDirectory').value=importCacheSettings.defaultDirectory;};
 $('importCacheBrowse').onclick=async()=>{try{const r=await api('browse',{initial:$('importCacheDirectory').value,kind:'destination'});if(r.directory)$('importCacheDirectory').value=r.directory;}catch(e){toast(e.message,'error');}};
 $('importCacheSave').onclick=async()=>{const button=$('importCacheSave');button.disabled=true;try{renderImportCache(await api('import-cache',{directory:$('importCacheDirectory').value}));toast('Import cache folder saved','success');}catch(e){toast(e.message,'error');}finally{button.disabled=!!importCacheSettings?.override;}};
+
+$('browseReplacementTemp').onclick=async()=>{const button=$('browseReplacementTemp');button.disabled=true;try{const r=await api('browse',{initial:$('replacementTempDirectory').value,kind:'destination',fallback:state.scan?.directory||$('directory').value});if(r.directory){$('replacementTempDirectory').value=r.directory;updateSelection();}}catch(e){toast(e.message,'error');}finally{button.disabled=false;}};

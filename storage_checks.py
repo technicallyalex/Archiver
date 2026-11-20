@@ -5,7 +5,7 @@ from pathlib import Path
 MIN_FREE=64*1024*1024
 
 def location(job):
-    path=Path(job['output']).parent
+    path=Path(job['settings'].get('replacementTempDirectory') or Path(job['output']).parent) if job['settings'].get('mode')=='overwrite' else Path(job['output']).parent
     if job['settings'].get('qualityMode')=='proxy':
         while not path.exists() and path.parent!=path:path=path.parent
     if not path.is_dir():raise ValueError('Output folder is unavailable: '+str(Path(job['output']).parent))
@@ -44,7 +44,7 @@ def snapshot(jobs):
     rows=[];seen={}
     for job in jobs:
         if job.get('status') not in ('queued','running'):continue
-        folder_name=str(Path(job['output']).parent)
+        folder_name=str(job['settings'].get('replacementTempDirectory') or Path(job['output']).parent) if job['settings'].get('mode')=='overwrite' else str(Path(job['output']).parent)
         try:key='device:'+str(location(job).stat().st_dev)
         except (OSError,ValueError):key='unavailable:'+folder_name
         if key not in seen:
@@ -53,14 +53,14 @@ def snapshot(jobs):
                 row={'folder':folder_name,'folders':[folder_name],'free':usage.free,'total':usage.total,'budget':0,'estimated':True,'available':True,'neededForStart':0}
             except (OSError,ValueError) as exc:row={'folder':folder_name,'folders':[folder_name],'free':0,'total':0,'budget':0,'estimated':False,'available':False,'error':str(exc),'neededForStart':0}
             rows.append(row);seen[key]=row
-        amount,estimated=budget(job);row=seen[key];row['budget']+=amount;row['estimated']=row['estimated'] and estimated
+        amount,estimated=budget(job);amount+=job.get('source_size',0) if job['settings'].get('mode')=='overwrite' and job['settings'].get('replacementTempDirectory') else 0;row=seen[key];row['budget']+=amount;row['estimated']=row['estimated'] and estimated
         if folder_name not in row['folders']:row['folders'].append(folder_name);row['folder']=str(Path(folder_name).anchor or folder_name)+f' · {len(row["folders"])} output folders'
         # The stage file sits in the output folder; allow another copy during publication.
         row['neededForStart']=max(row['neededForStart'],amount*2+MIN_FREE)
     blocked=any(not r['available'] or r['free']<MIN_FREE for r in rows)
     warning=any(r['free']<max(r['budget'],r['neededForStart']) for r in rows if r['available'])
     return {'locations':rows,'blocked':blocked,'warning':warning,'minimumFree':MIN_FREE,
-            'note':'Encode staging files use the output folder. Unknown quality-based sizes use the source size as a planning allowance.'}
+            'note':'Encode staging uses the selected replacement working folder when set, otherwise the output folder. Replacement working-folder budgets include an original backup. Unknown quality-based sizes use the source size as a planning allowance.'}
 
 def guard(job):
     folder=location(job)

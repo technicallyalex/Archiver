@@ -3,7 +3,7 @@ import secrets,threading,json
 import tool_config
 import preservation
 LOCK=threading.RLock()
-FIELDS=set('outputCodec codec abCodec sourceCodec encodingMode hardwareBackend encoder container audio audioBitrate resolution fps bitrate qualityValue customBitrate mode destination filenameTemplate qualityMode proresProfile archiveProfile encoderPriority testedEncoder xpsnrTarget sourcePreset outputPreset proxyCodec proxyScale proxyLocation naming nameSuffix batchName'.split())
+FIELDS=set('outputCodec codec abCodec sourceCodec encodingMode hardwareBackend encoder container audio audioBitrate resolution fps bitrate qualityValue customBitrate mode destination replacementTempDirectory filenameTemplate qualityMode proresProfile archiveProfile encoderPriority testedEncoder xpsnrTarget sourcePreset outputPreset proxyCodec proxyScale proxyLocation naming nameSuffix batchName'.split())
 def path():return tool_config.user_config().with_name('output-presets.json')
 def settings(value):
  if not isinstance(value,dict):raise ValueError('Invalid output settings')
@@ -65,7 +65,7 @@ def change(data):
 def portable_export(preset_id):
  row=next((r for r in load()['presets'] if r['id']==preset_id),None)
  if not row:raise ValueError('Select a saved preset to export')
- value=dict(row['settings']);value.pop('destination',None)
+ value=dict(row['settings']);value.pop('destination',None);value.pop('replacementTempDirectory',None)
  if value.get('proxyLocation')=='custom':value['proxyLocation']='subfolder'
  notes=[]
  if value.get('mode') in ('directory','overwrite'):value['mode']='preserve';notes.append('Output location and replacement action reset to Keep originals.')
@@ -78,7 +78,7 @@ def portable_import(document):
  if not isinstance(document.get('name'),str) or not 1<=len(document['name'].strip())<=80:raise ValueError('Invalid preset name')
  raw=document.get('settings')
  if not isinstance(raw,dict):raise ValueError('Invalid preset settings')
- raw={**raw,'mode':'preserve','destination':''};raw.pop('testedEncoder',None)
+ raw={**raw,'mode':'preserve','destination':''};raw.pop('testedEncoder',None);raw.pop('replacementTempDirectory',None)
  if raw.get('proxyLocation')=='custom':raw['proxyLocation']='subfolder'
  if raw.get('bitrate') in ('cq','icq'):raw.update(qualityMode='auto');raw.pop('qualityValue',None)
  return {'name':document['name'].strip(),'settings':settings(raw)}
