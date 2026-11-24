@@ -61,7 +61,7 @@ class QualityPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'source.mp4'
             source.write_bytes(b'source')
-            metadata = {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'avg_frame_rate': '24/1'}], 'format': {'duration': '3'}}
+            metadata = {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'pix_fmt': 'yuv420p', 'avg_frame_rate': '24/1'}], 'format': {'duration': '3'}}
             with patch.object(app.subprocess, 'Popen') as launch, patch.object(app.time, 'monotonic', return_value=86400):
                 process = launch.return_value
                 process.communicate.side_effect = [subprocess.TimeoutExpired('ffprobe', .2), (json.dumps(metadata), '')]

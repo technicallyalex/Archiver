@@ -792,6 +792,9 @@ def probe(path, cancel=None, timeout=90, light=False):
     video = next((s for s in data.get('streams', []) if s.get('codec_type') == 'video' and not s.get('disposition', {}).get('attached_pic')), None)
     if not video:
         raise ValueError('No video stream found')
+    if video.get('pix_fmt') in (None,'','unknown','unspecified'):
+        raise ValueError('FFprobe found a video track but could not read its pixel format. Its video index may be incomplete or damaged. Check the source file or try another copy; changing encoding settings will not repair an unreadable index.')
+
     fmt = data.get('format', {})
     ratio = video.get('avg_frame_rate', '0/1').split('/')
     fps = float(ratio[0]) / float(ratio[1]) if len(ratio) == 2 and float(ratio[1]) else 0
@@ -857,6 +860,8 @@ def analyze_pool(ids):
 
 
 def require_metadata(item):
+    if 'pixel_format' in item and item['pixel_format'] in (None,'','unknown','unspecified'):
+        raise ValueError('Video pixel format is unreadable. The video index may be incomplete or damaged; check the source file or try another copy.')
     if item.get('metadataPending'):
         raise ValueError('Select the files in the Media Pool and choose Analyze selected before encoding or testing.')
 
@@ -1713,6 +1718,7 @@ def execute_job(job):
         mode = job['settings']['mode']
         quality_mode = job['settings'].get('qualityMode', 'custom')
         exact = quality_mode == 'original'
+        if mode not in ('copy','move') and not exact:require_metadata(job['settings'].get('sourceMetadata') or {})
         metadata = None
         source_stamp = (Path(job['source']).stat().st_size, Path(job['source']).stat().st_mtime_ns)
         if job.get('source_mtime_ns') and source_stamp!=(job['source_size'],job['source_mtime_ns']):raise ValueError('Source changed after queueing. Import and queue it again.')

@@ -62,6 +62,8 @@ def candidates(available, encoding_mode, priority, container, hardware_backend='
 
 
 def validate_source(item):
+    if item.get('pixel_format') in (None,'','unknown','unspecified'):
+        raise ValueError('FFprobe could not determine the video pixel format. The file may have an incomplete or damaged video index. This is not a confirmed unsupported color format; check the source file or try another copy.')
     if item.get('color_transfer') in ['smpte2084', 'arib-std-b67'] or item.get('pixel_format') != 'yuv420p':
         raise ValueError('Automated (Test) supports 8-bit SDR YUV 4:2:0 sources only. Keep this source unchanged or review Manual controls.')
     if not item.get('duration') or not item.get('fps') or item['width'] % 2 or item['height'] % 2:

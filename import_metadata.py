@@ -21,7 +21,7 @@ def read(path,probe,cache,tool,cancel,notify=lambda _:None,timeout=90,clock=time
     check();stamp=metadata_cache.signature(path)
     item=cache.get(path,stamp,tool)
     if cache.error:notify(('cache-warning',cache.error))
-    if item:
+    if item and complete(item):
         check();notify(('cached',None));return {**item,'metadataSource':'cache'}
     item=None;method='full'
     # Indexed containers can usually describe themselves with a small packet read.

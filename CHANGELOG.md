@@ -1,3 +1,9 @@
+# 0.3.0-rc.14 — Release candidate
+
+- Fixed Encoding Queue viewport rebound during progress refreshes, including near the bottom of terminal view. Terminal scrollback and follow-output remain independent.
+- Distinguished unreadable video metadata from unsupported color formats, rejected incomplete video indexes before encoding, and re-inspected incomplete cached metadata.
+- Preserved the original rounded, tightly spaced wordmark while correcting the low v and final r. Updated matching wordmarks and the multi-size Windows icon; the green arrow remains unchanged.
+
 # 0.3.0-rc.10 — Release candidate
 
 - Fixed idle downward scrolling in Encoding Queue terminal view caused by browser scroll anchoring during progress refreshes. Terminal scrollback and follow-output behavior remain independent of the queue viewport.
