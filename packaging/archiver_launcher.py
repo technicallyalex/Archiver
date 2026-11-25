@@ -14,6 +14,11 @@ if not getattr(sys,'frozen',False):
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1]=='--finish-update':
+        import app_updates
+        try:app_updates.finish(*sys.argv[2:4])
+        except Exception as exc:ctypes.windll.user32.MessageBoxW(None,str(exc),'Archiver update',0x10)
+        return
     if len(sys.argv)>1 and sys.argv[1]=='--setup-tools':
         # A user-invoked batch file owns the console; normal launches stay windowless.
         kernel=ctypes.windll.kernel32

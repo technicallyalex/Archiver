@@ -1,3 +1,10 @@
+# 0.3.0-rc.18 — Release candidate
+
+- Combined Video Tools, About, Updates, and Feedback into one accessible Settings dialog. The dialog stays anchored near the top while panels expand downward and long content scrolls internally.
+- Added user-invoked GitHub update checks with stable/RC channel selection, checksum verification, and automatic Windows installation.
+- Updates replace the installed app in its existing folder after shutdown while preserving settings, presets, queues, cache locations, external dependencies, and user files. A separate helper verifies the installed runtime and restores previous application files if replacement or verification fails. Recovery backups and a transaction report are retained.
+- Updates require an idle queue and paused watch folders.
+
 # 0.3.0-rc.14 — Release candidate
 
 - Fixed Encoding Queue viewport rebound during progress refreshes, including near the bottom of terminal view. Terminal scrollback and follow-output remain independent.

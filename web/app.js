@@ -184,9 +184,9 @@ async function refresh(){let next;try{next=await api('state');}catch(e){$('toolS
 $('scan').onclick=async()=>{try{await exclusionPreferencesPromise;await exclusionSavePromise;await api('scan',{directory:$('directory').value,recursive:$('recursive').checked,files_only:$('importMode').value==='files',parallel:$('parallelScan').checked,workers:$('scanWorkers').value==='auto'?'auto':Number($('scanWorkers').value),excluded_folders:$('recursive').checked?excludedImportFolders():[],exclude_test_folders:$('excludeTestFolders').checked});selected.clear();await refresh();}catch(e){toast(e.message,'error');}};
 $('directory').onkeydown=e=>{if(e.key==='Enter')$('scan').click();};
 $('browseDirectory').onclick=async()=>{const button=$('browseDirectory');button.disabled=true;button.textContent='Choosing folder…';try{const result=await api('browse',{initial:$('directory').value,kind:'source'});if(result.directory){$('directory').value=result.directory;$('directory').focus();}}catch(e){toast(e.message,'error');}finally{button.disabled=false;button.textContent='Browse…';}};
-function settingsOpen(){updateDependencyStatus(); $('ffmpegPath').value=state.ffmpeg||'';$('ffprobePath').value=state.ffprobe||'';$('settingsDialog').showModal();}
-$('settingsOpen').onclick=settingsOpen;$('closeSettings').onclick=()=>$('settingsDialog').close();
-$('settingsForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{await api('config',{ffmpeg:$('ffmpegPath').value,ffprobe:$('ffprobePath').value});await refresh();if(state.dependencies?.ready)$('settingsDialog').close();else updateDependencyStatus();toast(state.dependencies?.ready?'All video tools are ready':'FFmpeg verified. Finish the remaining Video tools setup.',state.dependencies?.ready?'success':'info');}catch(error){toast(error.message,'error');}finally{button.disabled=false;}};
+function settingsOpen(){updateDependencyStatus(); $('ffmpegPath').value=state.ffmpeg||'';$('ffprobePath').value=state.ffprobe||'';openSettingsTab('tools');}
+$('settingsOpen').onclick=settingsOpen;
+$('settingsForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{await api('config',{ffmpeg:$('ffmpegPath').value,ffprobe:$('ffprobePath').value});await refresh();if(state.dependencies?.ready)$('preferencesDialog').close();else updateDependencyStatus();toast(state.dependencies?.ready?'All video tools are ready':'FFmpeg verified. Finish the remaining Video tools setup.',state.dependencies?.ready?'success':'info');}catch(error){toast(error.message,'error');}finally{button.disabled=false;}};
 $('codec').onchange=updateEncoders;
 $('selectAll').onchange=()=>{visibleFiles().forEach(f=>$('selectAll').checked?selected.add(f.id):selected.delete(f.id));updateSelection();};
 $('search').oninput=renderFiles;$('sort').onchange=renderFiles;for(const [id] of poolFilterDefinitions)$(id).onchange=renderFiles;$('clearPoolFilters').onclick=()=>{$('search').value='';for(const [id] of poolFilterDefinitions)for(const option of $(id).options)option.selected=false;renderFiles();};
@@ -847,8 +847,6 @@ function organizeWorkspaceLayout(){
 }
 organizeWorkspaceLayout();
 
-$('aboutOpen').onclick=()=>{$('aboutVersion').textContent='Version '+(state.version||'Loading…');$('aboutDialog').showModal();};
-$('aboutClose').onclick=()=>$('aboutDialog').close();
 
 var proresRequest=0,proresSignature='',proresPending=false,proresHasErrors=false;
 function updateProresRecommendation(){
@@ -1141,7 +1139,7 @@ function updateDependencyStatus(){
  }
 
  const status=state.dependencies||{ready:false,missing:['Tool verification']},info=status.ab_av1||state.ab_av1||{},ready=!!status.ready;
- $('toolStatus').textContent=ready?'Ready':'Setup required';$('toolStatus').classList.toggle('ready',ready);$('settingsOpen').classList.toggle('tools-ready',ready);$('settingsOpen').title=ready?'Video tools · All required tools are ready':'Video tools · Setup required: '+status.missing.join(', ');$('settingsOpen').setAttribute('aria-label',$('settingsOpen').title);
+ $('toolStatus').textContent=ready?'Ready':'Setup required';$('toolStatus').classList.toggle('ready',ready);$('settingsOpen').classList.toggle('tools-ready',ready);$('settingsOpen').title=ready?'Settings · All required video tools are ready':'Settings · Video tools setup required: '+status.missing.join(', ');$('settingsOpen').setAttribute('aria-label',$('settingsOpen').title);
  $('dependencySummary').textContent=ready?'All required video tools are ready.':'Setup required: '+status.missing.join(', ')+'. Importing, testing and encoding are unavailable until setup is complete.';
  $('dependencySummary').classList.toggle('requires-setup',!ready);
  $('abAv1DetailStatus').textContent=info.available?'Ready':'Not available';$('abAv1Version').textContent=info.version||'Not detected';$('abAv1Source').textContent=info.bundled?'Included with Archiver':info.path?'Found on PATH':'Not found';$('abAv1Path').textContent=info.path||'No executable found';$('abAv1Error').hidden=!info.error;$('abAv1Error').textContent=info.error||'';applyDependencyGates();
@@ -1166,3 +1164,33 @@ $('importCacheBrowse').onclick=async()=>{try{const r=await api('browse',{initial
 $('importCacheSave').onclick=async()=>{const button=$('importCacheSave');button.disabled=true;try{renderImportCache(await api('import-cache',{directory:$('importCacheDirectory').value}));toast('Import cache folder saved','success');}catch(e){toast(e.message,'error');}finally{button.disabled=!!importCacheSettings?.override;}};
 
 $('browseReplacementTemp').onclick=async()=>{const button=$('browseReplacementTemp');button.disabled=true;try{const r=await api('browse',{initial:$('replacementTempDirectory').value,kind:'destination',fallback:state.scan?.directory||$('directory').value});if(r.directory){$('replacementTempDirectory').value=r.directory;updateSelection();}}catch(e){toast(e.message,'error');}finally{button.disabled=false;}};
+
+var updatePoll=null;
+function showUpdateStatus(result){
+ $('updatesMessage').textContent=result.message;
+ const busy=['checking','installing'].includes(result.status);
+ $('updatesProgress').hidden=!busy;$('updatesCheck').disabled=busy;
+ $('updatesInstall').hidden=result.status!=='available';$('updatesInstall').disabled=busy;
+ if(busy&&!updatePoll)updatePoll=setTimeout(pollUpdates,1000);
+}
+async function pollUpdates(){updatePoll=null;try{showUpdateStatus(await api('updates'));}catch(e){$('updatesMessage').textContent='Archiver may be restarting. Reopen the app if this page does not reconnect.';}}
+async function checkAppUpdates(){try{showUpdateStatus(await api('check-updates',{}));}catch(e){$('updatesMessage').textContent=e.message;}}
+
+$('updatesCheck').onclick=checkAppUpdates;
+$('updatesInstall').onclick=async()=>{try{showUpdateStatus(await api('install-update',{}));}catch(e){$('updatesMessage').textContent=e.message;}};
+
+function openSettingsTab(name){
+ const dialog=$('preferencesDialog');
+ for(const tab of dialog.querySelectorAll('[data-settings-tab]')){const active=tab.dataset.settingsTab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;}
+ for(const panel of dialog.querySelectorAll('[data-settings-panel]'))panel.hidden=panel.dataset.settingsPanel!==name;
+ if(name==='about')$('aboutVersion').textContent='Version '+(state.version||'Loading…');
+ if(!dialog.open)dialog.showModal();
+ if(name==='updates')pollUpdates();
+}
+$('preferencesClose').onclick=()=>$('preferencesDialog').close();
+for(const tab of document.querySelectorAll('[data-settings-tab]')){
+ tab.onclick=()=>openSettingsTab(tab.dataset.settingsTab);
+ tab.onkeydown=e=>{const tabs=[...document.querySelectorAll('[data-settings-tab]')],index=tabs.indexOf(tab);let next;
+ if(e.key==='ArrowRight')next=(index+1)%tabs.length;else if(e.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=tabs.length-1;else return;
+ e.preventDefault();openSettingsTab(tabs[next].dataset.settingsTab);tabs[next].focus();};
+}

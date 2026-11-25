@@ -239,3 +239,19 @@ body[data-pane=library] .import-bar .directory-field{flex:1 1 160px;min-width:14
 
 /* Terminal refreshes must not re-anchor the surrounding queue viewport. */
 body[data-pane=queue] .workspace>main{overflow-anchor:none}
+/* Unified Settings keeps the navigation visible while the active panel scrolls. */
+#preferencesDialog{--settings-top:clamp(16px,5vh,48px);position:fixed;inset:var(--settings-top) 0 auto;margin:0 auto;width:760px;max-width:calc(100vw - 32px);max-height:calc(100dvh - var(--settings-top) - 16px);padding:24px;overflow:hidden}
+#preferencesDialog[open]{display:flex;flex-direction:column}
+#preferencesDialog>.dialog-heading,#preferencesDialog>.settings-tabs{flex-shrink:0}
+#preferencesDialog>.dialog-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+#preferencesDialog>.dialog-heading h2{margin:0}
+.settings-tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.settings-tabs [role=tab]{padding:9px 14px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap}
+.settings-tabs [aria-selected=true]{background:var(--selected);border-color:var(--accent);color:var(--text)}
+.settings-tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings-panel-body{overflow:auto;min-height:0;flex:0 1 auto;padding:4px 4px 12px 0;scrollbar-gutter:stable}
+#preferencesDialog [role=tabpanel]{width:auto;max-width:none;max-height:none;overflow:visible;padding:0}
+#preferencesDialog [role=tabpanel][hidden]{display:none}
+#preferencesDialog p{font-size:12px;line-height:1.7}
+#preferencesDialog #feedbackOpen{display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+@media(max-width:600px){#preferencesDialog{padding:18px}.settings-tabs{gap:4px}.settings-tabs [role=tab]{padding:8px 10px}}

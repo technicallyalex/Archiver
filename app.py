@@ -27,6 +27,7 @@ import prores
 import proxy_media
 import tool_config
 import dependency_setup
+import app_updates
 import folder_history
 import exclusion_preferences
 import output_presets
@@ -2011,6 +2012,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == '/api/notifications':
             try:return self.send(notification_history.snapshot(parse_qs(url.query).get('revision',[None])[0]))
             except (OSError,ValueError) as exc:return self.send({'error':str(exc)},400)
+        if url.path == '/api/updates':
+            return self.send(app_updates.snapshot())
         if url.path == '/api/output-presets':
             try:return self.send(output_presets.load())
             except ValueError as exc:return self.send({'error':str(exc)},400)
@@ -2162,9 +2165,19 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(length))
             path = urlparse(self.path).path
+            if app_updates.snapshot()['status']=='installing':raise ValueError('Archiver is installing an update. Please wait.')
             if path=='/api/scan' and body.get('files_only') is not True:require_video_tools()
             if path in {'/api/analyze-files','/api/test-scan','/api/test-queue','/api/start-tests','/api/queue','/api/start'}:require_video_tools()
-            if path == '/api/ab-av1-check':
+            if path == '/api/check-updates':
+                app_updates.check(VERSION)
+                return self.send(app_updates.snapshot())
+            elif path == '/api/install-update':
+                with LOCK:
+                    if tools_busy() or TOOL_SETUP['running'] or any(j['status']=='queued' for j in [*STATE['jobs'],*TEST_JOBS]):raise ValueError('Finish or remove queued work before updating Archiver.')
+                    if any(rule.get('enabled') for rule in WATCH_STATE.get('rules',[])):raise ValueError('Pause watch folders before updating Archiver.')
+                    app_updates.install(lambda: finish_update_shutdown(self.server))
+                return self.send(app_updates.snapshot())
+            elif path == '/api/ab-av1-check':
                 return self.send(ab_av1.installation(recheck=True))
             elif path == '/api/setup-tools':
                 start_tool_setup()
@@ -2385,6 +2398,11 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send({'error': str(exc)}, 400)
 
+
+def finish_update_shutdown(server):
+    stop_application(server)
+    # The tray owns a native message loop; exit only after normal shutdown and checkpoint.
+    os._exit(0)
 
 def stop_application(server):
     """Cancel active work, let its temporary files clean up, then stop HTTP."""
